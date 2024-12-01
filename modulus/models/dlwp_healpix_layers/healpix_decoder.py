@@ -30,6 +30,7 @@ class UNetDecoder(th.nn.Module):
         up_sampling_block: DictConfig,
         output_layer: DictConfig,
         recurrent_block: DictConfig = None,
+        recurrent_block2: DictConfig = None,
         n_channels: Sequence = (64, 32, 16),
         n_layers: Sequence = (1, 2, 2),
         output_channels: int = 1,
@@ -64,6 +65,7 @@ class UNetDecoder(th.nn.Module):
         """
         super().__init__()
         self.channel_dim = 1  # 1 in previous layout
+        self.recurrent_block2 = recurrent_block2 # for reeset function
 
         if dilations is None:
             # Defaults to [1, 1, 1...] in accordance with the number of unet levels
@@ -109,6 +111,13 @@ class UNetDecoder(th.nn.Module):
                 )
             else:
                 rec_module = None
+            if recurrent_block2 is not None:
+                rec_module2 = instantiate(
+                    config=recurrent_block2,
+                    in_channels=next_channel,
+                    enable_healpixpad=enable_healpixpad
+                    )
+                rec_module = th.nn.Sequential(rec_module, rec_module2)
 
             self.decoder.append(
                 th.nn.ModuleDict(
@@ -158,5 +167,8 @@ class UNetDecoder(th.nn.Module):
     def reset(self):
         """Resets the state of the decoder layers"""
         for layer in self.decoder:
-            if layer["recurrent"] is not None:
+            if layer["recurrent"] is not None and self.recurrent_block2 is None:
                 layer["recurrent"].reset()
+            elif layer["recurrent"] is not None and self.recurrent_block2 is not None:
+                for irecurrent in range(len(layer["recurrent"])):
+                    layer["recurrent"][irecurrent].reset()

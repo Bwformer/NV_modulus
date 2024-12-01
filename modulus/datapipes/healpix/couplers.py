@@ -214,6 +214,9 @@ class ConstantCoupler:
             )
 
             # extract coupled variables and scale lazily
+            # print(f"variables: {self.variables}")
+            # print(f"ds.inputs.channel_in: {self.ds.inputs.channel_in}")
+            # print(f"ds.inputs: {self.ds.inputs}")
             input_array = self.ds.inputs.sel(channel_in=self.variables)
             ds = (input_array - self.coupled_scaling["mean"]) / self.coupled_scaling[
                 "std"
