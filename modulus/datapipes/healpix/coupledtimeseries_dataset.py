@@ -366,3 +366,211 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
 
         # gather coupled_inputs
         return inputs_result
+    
+
+class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
+    def __init__(
+            self,
+            dataset: xr.Dataset,
+            scaling: DictConfig,
+            input_variables: Sequence,
+            output_variables: Sequence = None,
+            input_time_dim: int = 1,
+            presteps: int = 0,
+            output_time_dim: int = 1,
+            data_time_step: Union[int, str] = '3H',
+            time_step: Union[int, str] = '6H',
+            gap: Union[int, str, None] = None,
+            batch_size: int = 32,
+            drop_last: bool = False,
+            add_insolation: bool = False,
+            forecast_init_times: Optional[Sequence] = None,
+            couplings: Sequence = [],
+            st_couplings: Sequence = []
+    ):
+        """
+        Dataset for coupling TimesSeriesDataset with external inputs from various earth system 
+        components, including separate handling for space-time couplings.
+
+        :param st_couplings: a Sequence of dictionaries that define the mechanics of space-time couplings
+        """
+        self.input_variables = input_variables 
+        self.output_variables = input_variables if output_variables is None else output_variables 
+        
+        self.couplings = [
+            getattr(couplers, c['coupler'])(
+                dataset,
+                **OmegaConf.to_object(DictConfig(c))['params'],
+            ) for c in couplings
+        ] if couplings else []
+
+        self.st_couplings = [
+            getattr(couplers, c['coupler'])(
+                dataset,
+                **OmegaConf.to_object(DictConfig(c))['params'],
+            ) for c in st_couplings
+        ] if st_couplings else []
+
+        super().__init__(
+            dataset=dataset,
+            scaling=scaling,
+            input_time_dim=input_time_dim,
+            output_time_dim=output_time_dim,
+            data_time_step=data_time_step,
+            time_step=time_step,
+            gap=gap,
+            batch_size=batch_size,
+            drop_last=drop_last,
+            add_insolation=add_insolation,
+            forecast_init_times=forecast_init_times,
+        )
+        
+        # Calculate static indices for coupling 
+        for c in self.couplings + self.st_couplings:
+            c.compute_coupled_indices(self.interval, self.data_time_step)
+        
+        # Keep track of integration steps 
+        self.integration_step = 1 # starts at 1 because first step is done by __getitem__
+        self.curr_item = None # keeps track of current initialization 
+
+        # print(f"sst_couplings: {len(self.couplings)}")
+        # print(f"ST Couplings: {len(self.st_couplings)}")
+
+    def _get_scaling_da(self):
+        scaling_df = pd.DataFrame.from_dict(self.scaling).T
+        scaling_df.loc['zeros'] = {'mean': 0., 'std': 1.}
+        scaling_da = scaling_df.to_xarray().astype('float32')
+
+        for c in self.couplings + self.st_couplings:
+            c.set_scaling(scaling_da)
+
+        try:
+            self.input_scaling = scaling_da.sel(index=self.input_variables).rename({'index': 'channel_in'})
+            self.input_scaling = {"mean": np.expand_dims(self.input_scaling["mean"].to_numpy(), (0, 2, 3, 4)),
+                                  "std": np.expand_dims(self.input_scaling["std"].to_numpy(), (0, 2, 3, 4))}
+        except (ValueError, KeyError):
+            raise KeyError(f"one or more of the input data variables f{list(self.ds.channel_in)} not found in the "
+                           f"scaling config dict data.scaling ({list(self.scaling.keys())})")
+        try:
+            self.target_scaling = scaling_da.sel(index=self.output_variables).rename({'index': 'channel_out'})
+            self.target_scaling = {"mean": np.expand_dims(self.target_scaling["mean"].to_numpy(), (0, 2, 3, 4)),
+                                   "std": np.expand_dims(self.target_scaling["std"].to_numpy(), (0, 2, 3, 4))}
+        except (ValueError, KeyError):
+            raise KeyError(f"one or more of the target data variables f{list(self.ds.channel_out)} not found in the "
+                           f"scaling config dict data.scaling ({list(self.scaling.keys())})")
+
+    def __getitem__(self, item):
+        torch.cuda.nvtx.range_push("ST_CoupledTimeSeriesDataset:__getitem__")
+        
+        if item < 0:
+            item = len(self) + item
+        if item < 0 or item > len(self):
+            raise IndexError(f"index {item} out of range for dataset with length {len(self)}")
+
+        torch.cuda.nvtx.range_push("ST_CoupledTimeSeriesDataset:__getitem__:load_batch")
+        time_index, this_batch = self._get_time_index(item)
+        batch = {'time': slice(*time_index)}
+        load_time = time.time()
+
+        input_array = self.ds['inputs'].sel(channel_in=self.input_variables).isel(**batch).to_numpy()
+        input_array = (input_array - self.input_scaling['mean']) / self.input_scaling['std']
+        
+        if not self.forecast_mode:
+            target_array = self.ds['targets'].sel(channel_out=self.output_variables).isel(**batch).to_numpy()
+            target_array = (target_array - self.target_scaling['mean']) / self.target_scaling['std']
+            
+        logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
+        torch.cuda.nvtx.range_pop()
+
+        torch.cuda.nvtx.range_push("ST_CoupledTimeSeriesDataset:__getitem__:process_batch")
+        compute_time = time.time()
+
+        if self.add_insolation:
+            sol = insolation(self._get_forecast_sol_times(item), self.ds.lat.values, self.ds.lon.values)[:, None]
+            decoder_inputs = np.empty((this_batch, self.input_time_dim + self.output_time_dim, 1) +
+                                      self.spatial_dims, dtype='float32')
+            self.curr_item = item
+            self.integration_step = 1
+
+        inputs = np.empty((this_batch, self.input_time_dim, 
+                           len(self.input_variables)) +
+                          self.spatial_dims, dtype='float32')
+        if not self.forecast_mode:
+            targets = np.empty((this_batch, self.output_time_dim, len(self.output_variables)) +
+                               self.spatial_dims, dtype='float32')
+
+        for sample in range(this_batch):
+            inputs[sample] = input_array[self._input_indices[sample]]
+            if not self.forecast_mode:
+                targets[sample] = target_array[self._output_indices[sample]]
+            if self.add_insolation:
+                decoder_inputs[sample] = sol if self.forecast_mode else \
+                    sol[self._input_indices[sample] + self._output_indices[sample]]
+
+        inputs_result = [inputs]
+        if self.add_insolation:
+            inputs_result.append(decoder_inputs)
+
+        inputs_result = [np.transpose(x, axes=(0, 3, 1, 2, 4, 5)) for x in inputs_result]
+            
+        if 'constants' in self.ds.data_vars:
+            inputs_result.append(np.swapaxes(self.ds.constants.values, 0, 1))
+
+        # Append integrated couplings 
+        if len(self.couplings) > 0:
+            integrated_couplings = np.concatenate([c.construct_integrated_couplings(batch, this_batch)
+                                                   for c in self.couplings],
+                                                   axis=2)
+            inputs_result.append(integrated_couplings)
+
+        # Append space-time couplings
+        if len(self.st_couplings) > 0:
+            st_integrated_couplings = np.concatenate([c.construct_integrated_couplings(batch, this_batch, if_st=True)
+                                                      for c in self.st_couplings],
+                                                     axis=2)
+            inputs_result.append(st_integrated_couplings)
+
+        logger.log(5, "computed batch in %0.2f s", time.time() - compute_time)
+        torch.cuda.nvtx.range_pop()
+
+        torch.cuda.nvtx.range_pop()
+
+        if self.forecast_mode:
+            return inputs_result
+
+        targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
+
+        return inputs_result, targets
+
+    def next_integration(self, model_outputs, constants):
+        inputs_result = []
+
+        init_time_dim = len(self._input_indices[0])
+        prognostic_inputs = model_outputs[:,:,0-init_time_dim:]
+        inputs_result.append(prognostic_inputs)
+
+        time_offset = self.time_step * (self.output_time_dim) * self.integration_step
+        sol = torch.tensor(insolation(self._get_forecast_sol_times(self.curr_item)+time_offset, self.ds.lat.values, self.ds.lon.values)[:, None])
+        decoder_inputs = np.empty((1, self.input_time_dim + self.output_time_dim, 1) +
+                                  self.spatial_dims, dtype='float32')
+        decoder_inputs[0] = sol
+        inputs_result.append(torch.tensor(decoder_inputs.transpose(0,3,1,2,4,5)))
+        
+        inputs_result.append(constants) 
+        self.integration_step += 1 
+
+        # Append couplings inputs 
+        if len(self.couplings) > 0:
+            integrated_couplings = np.concatenate([c.construct_integrated_couplings()
+                                                   for c in self.couplings],
+                                                  axis=2)
+            inputs_result.append(torch.tensor(integrated_couplings))
+
+        # Append space-time couplings inputs
+        if len(self.st_couplings) > 0:
+            st_integrated_couplings = np.concatenate([c.construct_integrated_couplings(if_st=True)
+                                                      for c in self.st_couplings],
+                                                     axis=2)
+            inputs_result.append(torch.tensor(st_integrated_couplings))
+
+        return inputs_result
