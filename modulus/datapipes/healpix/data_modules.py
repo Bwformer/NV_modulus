@@ -38,7 +38,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from modulus.distributed import DistributedManager
 
-from .coupledtimeseries_dataset import CoupledTimeSeriesDataset
+from .coupledtimeseries_dataset import CoupledTimeSeriesDataset, ST_CoupledTimeSeriesDataset
 from .timeseries_dataset import TimeSeriesDataset
 
 logger = logging.getLogger(__name__)
@@ -570,10 +570,10 @@ class TimeSeriesDataModule:
                     batch_size=self.batch_size,
                 )
 
-                dataset = dataset.sel(
-                    channel_in=self.input_variables,
-                    channel_out=self.output_variables,
-                )
+                # dataset = dataset.sel(
+                #     channel_in=self.input_variables,
+                #     channel_out=self.output_variables,
+                # )
             else:
                 dataset = open_fn(
                     input_variables=self.input_variables,
@@ -1111,3 +1111,254 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                 forecast_init_times=self.forecast_init_times,
                 couplings=self.couplings,
             )
+
+
+class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
+    """
+    Extension of TimeSeriesDataModule, designed for coupled models that take input from other
+    earth system components.
+    """
+
+    def __init__(
+        self,
+        src_directory: str = ".",
+        dst_directory: str = ".",
+        dataset_name: str = "dataset",
+        prefix: Optional[str] = None,
+        suffix: Optional[str] = None,
+        data_format: str = "classic",
+        batch_size: int = 32,
+        drop_last: bool = False,
+        input_variables: Optional[Sequence] = None,
+        output_variables: Optional[Sequence] = None,
+        constants: Optional[DictConfig] = None,
+        scaling: Optional[DictConfig] = None,
+        splits: Optional[DictConfig] = None,
+        presteps: int = 0,
+        input_time_dim: int = 1,
+        output_time_dim: int = 1,
+        data_time_step: Union[int, str] = "3h",
+        time_step: Union[int, str] = "6h",
+        gap: Union[int, str, None] = None,
+        shuffle: bool = True,
+        add_insolation: bool = False,
+        cube_dim: int = 64,
+        num_workers: int = 4,
+        pin_memory: bool = True,
+        prebuilt_dataset: bool = True,
+        forecast_init_times: Optional[Sequence] = None,
+        couplings: Sequence = None,
+        st_couplings: Sequence = None,
+    ):
+        self.couplings = couplings
+        self.st_couplings = st_couplings
+        super().__init__(
+            src_directory,
+            dst_directory,
+            dataset_name,
+            prefix,
+            suffix,
+            data_format,
+            batch_size,
+            drop_last,
+            input_variables,
+            output_variables,
+            constants,
+            scaling,
+            splits,
+            presteps,
+            input_time_dim,
+            output_time_dim,
+            data_time_step,
+            time_step,
+            gap,
+            shuffle,
+            add_insolation,
+            cube_dim,
+            num_workers,
+            pin_memory,
+            prebuilt_dataset,
+            forecast_init_times,
+        )
+
+    def _get_coupled_vars(self):
+
+        coupled_variables = []
+        for d in self.couplings:
+            coupled_variables = coupled_variables + d["params"]["variables"]
+        if self.st_couplings:
+            for d in self.st_couplings:
+                coupled_variables += d['params']['variables']
+        return coupled_variables
+
+    def setup(self) -> None:
+        """Setup the datasets used for this DataModule"""
+        if self.data_format == "classic":
+            create_fn = create_time_series_dataset_classic
+            open_fn = (
+                open_time_series_dataset_classic_prebuilt
+                if self.prebuilt_dataset
+                else open_time_series_dataset_classic_on_the_fly
+            )
+        else:
+            raise ValueError("'data_format' must be one of ['classic', 'zarr']")
+
+        coupled_variables = self._get_coupled_vars()
+        # make sure distributed manager is initalized
+        if not DistributedManager.is_initialized():
+            DistributedManager.initialize()
+        dist = DistributedManager()
+
+        if torch.distributed.is_initialized():
+            if self.prebuilt_dataset:
+                if dist.rank == 0:
+                    create_fn(
+                        src_directory=self.src_directory,
+                        dst_directory=self.dst_directory,
+                        dataset_name=self.dataset_name,
+                        input_variables=self.input_variables + coupled_variables,
+                        output_variables=self.output_variables,
+                        constants=self.constants,
+                        prefix=self.prefix,
+                        suffix=self.suffix,
+                        batch_size=self.dataset_batch_size,
+                        scaling=self.scaling,
+                        overwrite=False,
+                    )
+
+                # wait for rank 0 to complete, because then the files are guaranteed to exist
+                torch.distributed.barrier()
+
+                dataset = open_fn(
+                    directory=self.dst_directory,
+                    dataset_name=self.dataset_name,
+                    constants=self.constants is not None,
+                    batch_size=self.batch_size,
+                )
+
+                # dataset = dataset.sel(
+                #     channel_in=self.input_variables,
+                #     channel_out=self.output_variables,
+                # )
+            else:
+                dataset = open_fn(
+                    input_variables=self.input_variables + coupled_variables,
+                    output_variables=self.output_variables,
+                    directory=self.dst_directory,
+                    constants=self.constants,
+                    prefix=self.prefix,
+                    batch_size=self.batch_size,
+                )
+        else:
+            if self.prebuilt_dataset:
+                create_fn(
+                    src_directory=self.src_directory,
+                    dst_directory=self.dst_directory,
+                    dataset_name=self.dataset_name,
+                    input_variables=self.input_variables + coupled_variables,
+                    output_variables=self.output_variables,
+                    constants=self.constants,
+                    prefix=self.prefix,
+                    suffix=self.suffix,
+                    batch_size=self.dataset_batch_size,
+                    scaling=self.scaling,
+                    overwrite=False,
+                )
+
+                dataset = open_fn(
+                    directory=self.dst_directory,
+                    dataset_name=self.dataset_name,
+                    constants=self.constants is not None,
+                    batch_size=self.batch_size,
+                )
+            else:
+                dataset = open_fn(
+                    input_variables=self.input_variables + coupled_variables,
+                    output_variables=self.output_variables,
+                    directory=self.dst_directory,
+                    constants=self.constants,
+                    prefix=self.prefix,
+                    batch_size=self.batch_size,
+                )
+
+        if self.splits is not None and self.forecast_init_times is None:
+            self.train_dataset = ST_CoupledTimeSeriesDataset(
+                dataset.sel(
+                    time=slice(
+                        self.splits["train_date_start"], self.splits["train_date_end"]
+                    )
+                ),
+                scaling=self.scaling,
+                input_variables=self.input_variables,
+                output_variables=self.output_variables,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=self.drop_last,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings,
+                st_couplings=self.st_couplings,
+            )
+            self.val_dataset = ST_CoupledTimeSeriesDataset(
+                dataset.sel(
+                    time=slice(
+                        self.splits["val_date_start"], self.splits["val_date_end"]
+                    )
+                ),
+                scaling=self.scaling,
+                input_variables=self.input_variables,
+                output_variables=self.output_variables,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                # drop_last=False,
+                drop_last=self.drop_last,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings,
+                st_couplings=self.st_couplings,
+            )
+            self.test_dataset = ST_CoupledTimeSeriesDataset(
+                dataset.sel(
+                    time=slice(
+                        self.splits["test_date_start"], self.splits["test_date_end"]
+                    )
+                ),
+                scaling=self.scaling,
+                input_variables=self.input_variables,
+                output_variables=self.output_variables,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=False,
+                add_insolation=self.add_insolation,
+                couplings=self.couplings,
+                st_couplings=self.st_couplings,
+            )
+        else:
+            self.test_dataset = ST_CoupledTimeSeriesDataset(
+                dataset,
+                scaling=self.scaling,
+                input_variables=self.input_variables,
+                output_variables=self.output_variables,
+                input_time_dim=self.input_time_dim,
+                output_time_dim=self.output_time_dim,
+                data_time_step=self.data_time_step,
+                time_step=self.time_step,
+                gap=self.gap,
+                batch_size=self.dataset_batch_size,
+                drop_last=False,
+                add_insolation=self.add_insolation,
+                forecast_init_times=self.forecast_init_times,
+                couplings=self.couplings,
+                st_couplings=self.st_couplings,
+            )
+            
