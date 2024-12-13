@@ -87,16 +87,16 @@ class ConstantCoupler:
         self.integrated_couplings = None
 
         if not prepared_coupled_data:
-            print(
-                "Assuming coupled data is not preprocessed, averaging fields in as designed in\
- TrailingAverageCoupler. See docs for specifics."
-            )
+#             print(
+#                 "Assuming coupled data is not preprocessed, averaging fields in as designed in\
+#  TrailingAverageCoupler. See docs for specifics."
+#             )
             self._prepare_coupled_data()
-        else:
-            print(
-                '**Assuming coupled data has been prepared properly, using coupled field[s] from\
- dataset "as-is"**'
-            )
+        # else:
+#             print(
+#                 '**Assuming coupled data has been prepared properly, using coupled field[s] from\
+#  dataset "as-is"**'
+#             )
 
     def _compute_coupled_integration_dim(self):
 
@@ -345,16 +345,16 @@ class TrailingAverageCoupler:
         self.coupled_mode = False  # if forecasting with another coupled model
 
         if not prepared_coupled_data:
-            print(
-                "Assuming coupled data is not preprocessed, averaging fields in as designed in\
- TrailingAverageCoupler. See docs for specifics."
-            )
+#             print(
+#                 "Assuming coupled data is not preprocessed, averaging fields in as designed in\
+#  TrailingAverageCoupler. See docs for specifics."
+#             )
             self._prepare_coupled_data()
-        else:
-            print(
-                '**Assuming coupled data has been prepared properly, using coupled field[s] from\
- dataset "as-is"**'
-            )
+        # else:
+#             print(
+#                 '**Assuming coupled data has been prepared properly, using coupled field[s] from\
+#  dataset "as-is"**'
+#             )
 
     def compute_coupled_indices(self, interval, data_time_step):
 
