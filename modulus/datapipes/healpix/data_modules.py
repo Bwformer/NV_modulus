@@ -119,7 +119,7 @@ def open_time_series_dataset_classic_on_the_fly(
         file_name = _get_file_name(directory, prefix, variable, suffix)
         logger.debug("open nc dataset %s", file_name)
 
-        ds = xr.open_dataset(file_name, chunks={"sample": batch_size}, autoclose=True)
+        ds = xr.open_dataset(file_name, autoclose=True)
 
         if "LL" in prefix:
             ds = ds.rename({"lat": "height", "lon": "width"})
@@ -206,15 +206,13 @@ def open_time_series_dataset_classic_prebuilt(
     -------
     xr.Dataset: The opened dataset
     """
-    
+
     ds_path = Path(directory, dataset_name + ".zarr")
 
     if not ds_path.exists():
         raise FileNotFoundError(f"Dataset doesn't appear to exist at {ds_path}")
 
-    result = xr.open_zarr(ds_path, chunks={"time": batch_size})
-    # if 'sinlat' in result.channel_c.values:
-    #     result = result.sel(channel_c=['lsm'])
+    result = xr.open_zarr(ds_path)
     return result
 
 
@@ -287,12 +285,10 @@ def create_time_series_dataset_classic(
     for variable in all_variables:
         file_name = _get_file_name(src_directory, prefix, variable, suffix)
         logger.debug("open nc dataset %s", file_name)
-        if "sample" in list(xr.open_dataset(file_name).dims.keys()):
-            ds = xr.open_dataset(file_name, chunks={"sample": batch_size}).rename(
-                {"sample": "time"}
-            )
+        if "sample" in list(xr.open_dataset(file_name).sizes.keys()):
+            ds = xr.open_dataset(file_name).rename({"sample": "time"})
         else:
-            ds = xr.open_dataset(file_name, chunks={"time": batch_size})
+            ds = xr.open_dataset(file_name)
         if "varlev" in ds.dims:
             ds = ds.isel(varlev=0)
 
@@ -569,11 +565,6 @@ class TimeSeriesDataModule:
                     constants=self.constants is not None,
                     batch_size=self.batch_size,
                 )
-
-                # dataset = dataset.sel(
-                #     channel_in=self.input_variables,
-                #     channel_out=self.output_variables,
-                # )
             else:
                 dataset = open_fn(
                     input_variables=self.input_variables,
@@ -614,6 +605,13 @@ class TimeSeriesDataModule:
                     prefix=self.prefix,
                     batch_size=self.batch_size,
                 )
+
+        dataset = dataset.sel(
+            channel_in=self.input_variables,
+            channel_out=self.output_variables,
+        )
+        if self.constants is not None:
+            dataset = dataset.sel(channel_c=list(self.constants.values()))
 
         if self.splits is not None and self.forecast_init_times is None:
             self.train_dataset = TimeSeriesDataset(
@@ -1002,11 +1000,6 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     constants=self.constants is not None,
                     batch_size=self.batch_size,
                 )
-
-                dataset = dataset.sel(
-                    channel_in=self.input_variables + coupled_variables,
-                    channel_out=self.output_variables,
-                )
             else:
                 dataset = open_fn(
                     input_variables=self.input_variables + coupled_variables,
@@ -1047,6 +1040,13 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     prefix=self.prefix,
                     batch_size=self.batch_size,
                 )
+
+        dataset = dataset.sel(
+            channel_in=self.input_variables + coupled_variables,
+            channel_out=self.output_variables,
+        )
+        if self.constants is not None:
+            dataset = dataset.sel(channel_c=list(self.constants.values()))
 
         if self.splits is not None and self.forecast_init_times is None:
             self.train_dataset = CoupledTimeSeriesDataset(
