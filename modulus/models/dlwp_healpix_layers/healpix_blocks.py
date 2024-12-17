@@ -495,9 +495,7 @@ class DoubleConvNeXtBlock(th.nn.Module):
 
 class Multi_SymmetricConvNeXtBlock(th.nn.Module):
     """
-    Support "n_layers" in SymmetricConvNeXtBlock.
-    Create a multi-layer SymmetricConvNeXtBlock with 'n_layers' specified in the config files
-    Introduce a new class to prevent conflicts with existing trained models.
+    Another modification of ConvNeXtBlock block this time putting two into a single block
     """
     def __init__(
             self,
