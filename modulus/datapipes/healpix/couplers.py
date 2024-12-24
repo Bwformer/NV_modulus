@@ -439,6 +439,8 @@ class TrailingAverageCoupler:
                 else:
                     if oc in v and oc == v.split('-')[0]:
                         channel_indices.append(i)
+                    elif oc in v and oc == v[:-4]: # as for 'tau300-700-48H', there are 2 '-'
+                        channel_indices.append(i)
         self.coupled_channel_indices = channel_indices
 
         # find averaging periods from componenet output
@@ -466,7 +468,7 @@ class TrailingAverageCoupler:
         self.preset_coupled_fields = None
 
     def set_coupled_fields(self, coupled_fields):
-
+        # coupled_fields is [B, F, T, C, H, W]
         coupled_fields = coupled_fields[:, :, :, self.coupled_channel_indices, :, :]
         # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
         coupled_averaging_periods = []
@@ -479,6 +481,7 @@ class TrailingAverageCoupler:
         self.preset_coupled_fields = th.concat(
             coupled_averaging_periods, dim=2
         ).permute(2, 0, 3, 1, 4, 5)
+        # self.preset_coupled_fields is [n_coupled_tims, B, T*C, F, H, W]??
         # flag for construct integrated coupling method to use this array
         self.coupled_mode = True
 
