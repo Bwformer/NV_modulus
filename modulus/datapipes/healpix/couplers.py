@@ -158,8 +158,8 @@ class ConstantCoupler:
         # we check if the coupled model output var is in self.variables.
         #
         # for example 'z1000' is in 'z1000-48H'
-        for i, oc in enumerate(output_channels):
-            for v in self.variables: 
+        for v in self.variables: 
+            for i, oc in enumerate(output_channels):
                 if '-' not in v:
                     if oc in v and len(oc) == len(v):
                         channel_indices.append(i)
@@ -173,8 +173,8 @@ class ConstantCoupler:
         # get proper channels from coupled component output 
         output_channels = coupled_module.output_variables
         channel_indices = []
-        for i, oc in enumerate(output_channels):
-            for v in self.variables: 
+        for v in self.variables: 
+            for i, oc in enumerate(output_channels):
                 if '-' not in v:
                     if oc in v and len(oc) == len(v):
                         channel_indices.append(i)
@@ -422,7 +422,7 @@ class TrailingAverageCoupler:
 
         # To expediate the coupling process the coupled_forecast
         # get proper channels from coupled component output
-        output_channels = coupled_module.output_variables
+        self.output_variables = coupled_module.output_variables
         channel_indices = []
         # A bit convoluted. Prepared coupled variables
         # are given a suffix for training associated with their
@@ -431,8 +431,8 @@ class TrailingAverageCoupler:
         # we check if the coupled model output var is in self.variables.
         #
         # for example 'z1000' is in 'z1000-48H'
-        for i, oc in enumerate(output_channels):
-            for v in self.variables: 
+        for v in self.variables: 
+            for i, oc in enumerate(self.output_variables):
                 if '-' not in v:
                     if oc in v and len(oc) == len(v):
                         channel_indices.append(i)
@@ -521,6 +521,41 @@ class TrailingAverageCoupler:
         # # self.preset_coupled_fields is [T, B, C, F, H, W],  e.g. torch.Size([1, 1, 4, 12, 32, 32])
         # # flag for construct integrated coupling method to use this array
         # self.coupled_mode = True
+
+
+
+    def update_scaling(self, integrated_couplings, scaling_da):
+
+        # for i in self.coupled_channel_indices:
+        #     print(f'output_variables: {self.output_variables[i]}')
+
+        # print(f"integrated_couplings: {integrated_couplings.shape}")
+
+        old_scaling = scaling_da.sel(index=[self.output_variables[i] for i in self.coupled_channel_indices]).rename({'index':'channel_in'})
+
+        # print(f"old_scaling: {old_scaling}")
+
+        n_avergaing_periods = len(self.averaging_slices)
+        old_scaling_mean = np.expand_dims( np.tile(old_scaling['mean'].to_numpy(), n_avergaing_periods),
+                                                        (0,1,3,4,5))
+        old_scaling_std = np.expand_dims( np.tile(old_scaling['std'].to_numpy(), n_avergaing_periods),
+                                                        (0,1,3,4,5))
+        new_scaling_mean = np.expand_dims( np.tile(self.coupled_scaling['mean'].squeeze(), n_avergaing_periods),
+                                                        (0,1,3,4,5))
+        new_scaling_std = np.expand_dims( np.tile(self.coupled_scaling['std'].squeeze(), n_avergaing_periods),
+                                                        (0,1,3,4,5))
+        
+        # print(f"old_scaling_mean: {old_scaling['mean'].to_numpy()}")
+        # print(f"old_scaling_std: {old_scaling['std'].to_numpy()}")
+        # print(f"new_scaling_mean: {self.coupled_scaling['mean'].squeeze()}")
+        # print(f"new_scaling_std: {self.coupled_scaling['std'].squeeze()}")
+
+        # update scaling
+        update_integrated_couplings = integrated_couplings * old_scaling_std + old_scaling_mean
+        update_integrated_couplings = (update_integrated_couplings - new_scaling_mean) / new_scaling_std
+        return update_integrated_couplings
+
+
 
     def construct_integrated_couplings(
         self,
