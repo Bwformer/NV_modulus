@@ -213,8 +213,7 @@ def open_time_series_dataset_classic_prebuilt(
         raise FileNotFoundError(f"Dataset doesn't appear to exist at {ds_path}")
 
     result = xr.open_zarr(ds_path, chunks={"time": batch_size})
-    if 'sinlat' in result.channel_c.values:
-        result = result.sel(channel_c=['lsm'])
+    
     return result
 
 
