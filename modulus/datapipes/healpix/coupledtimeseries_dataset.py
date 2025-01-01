@@ -211,160 +211,170 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             )
 
     def __getitem__(self, item):
-        # start range
-        torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__")
+        try:
+            # start range
+            torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__")
 
-        if item < 0:
-            item = len(self) + item
-        if item < 0 or item > len(self):
-            raise IndexError(
-                f"index {item} out of range for dataset with length {len(self)}"
-            )
+            if item < 0:
+                item = len(self) + item
+            if item < 0 or item > len(self):
+                raise IndexError(
+                    f"index {item} out of range for dataset with length {len(self)}"
+                )
 
-        # remark: load first then normalize
-        torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__:load_batch")
-        time_index, this_batch = self._get_time_index(item)
-        batch = {"time": slice(*time_index)}
-        load_time = time.time()
+            # remark: load first then normalize
+            torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__:load_batch")
+            time_index, this_batch = self._get_time_index(item)
+            batch = {"time": slice(*time_index)}
+            load_time = time.time()
 
-        input_array = (
-            self.ds["inputs"]
-            .sel(channel_in=self.input_variables)
-            .isel(**batch)
-            .to_numpy()
-        )
-        # retrieve coupled inputs
-        if len(self.couplings) > 0:
-            integrated_couplings = np.concatenate(
-                [
-                    c.construct_integrated_couplings(batch, this_batch)
-                    for c in self.couplings
-                ],
-                axis=2,
-            )
-            # update scaling for coupled forecasts
-            for c in self.couplings:
-                if c.coupled_mode:
-                    scaling_df = pd.DataFrame.from_dict(self.scaling).T
-                    scaling_da = scaling_df.to_xarray().astype('float32')
-                    integrated_couplings = c.update_scaling(integrated_couplings, scaling_da)
-
-
-        input_array = (input_array - self.input_scaling["mean"]) / self.input_scaling[
-            "std"
-        ]
-        if not self.forecast_mode:
-            # BAD NEWS: Indexing the array as commented out below causes unexpected behavior in target creation.
-            #     leaving this in here as a warning
-            # target_array = self.ds['targets'].isel(**batch).to_numpy()
-            target_array = (
-                self.ds["targets"]
-                .sel(channel_out=self.output_variables)
+            input_array = (
+                self.ds["inputs"]
+                .sel(channel_in=self.input_variables)
                 .isel(**batch)
                 .to_numpy()
             )
-            target_array = (
-                target_array - self.target_scaling["mean"]
-            ) / self.target_scaling["std"]
-            # target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
-            #                self.target_scaling['std']).compute()
+            # retrieve coupled inputs
+            if len(self.couplings) > 0:
+                integrated_couplings = np.concatenate(
+                    [
+                        c.construct_integrated_couplings(batch, this_batch)
+                        for c in self.couplings
+                    ],
+                    axis=2,
+                )
+                # update scaling for coupled forecasts
+                for c in self.couplings:
+                    if c.coupled_mode:
+                        scaling_df = pd.DataFrame.from_dict(self.scaling).T
+                        scaling_da = scaling_df.to_xarray().astype('float32')
+                        integrated_couplings = c.update_scaling(integrated_couplings, scaling_da)
 
-        logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
-        torch.cuda.nvtx.range_pop()
 
-        torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__:process_batch")
-        compute_time = time.time()
-        # Insolation
-        if self.add_insolation:
-            sol = insolation(
-                self._get_forecast_sol_times(item),
-                self.ds.lat.values,
-                self.ds.lon.values,
-            )[:, None]
-            decoder_inputs = np.empty(
-                (this_batch, self.input_time_dim + self.output_time_dim, 1)
-                + self.spatial_dims,
-                dtype="float32",
-            )
-            # update current item and reset integration_step counter for further integrations which need
-            # insolation but bypass this method see method "next_integration()" for details
-            self.curr_item = item
-            self.integration_step = 1
-
-        # Get buffers for the batches, which we'll fill in iteratively.
-        inputs = np.empty(
-            (this_batch, self.input_time_dim, len(self.input_variables))
-            + self.spatial_dims,
-            dtype="float32",
-        )
-        if not self.forecast_mode:
-            targets = np.empty(
-                (this_batch, self.output_time_dim, len(self.output_variables))
-                + self.spatial_dims,
-                dtype="float32",
-            )
-
-        # Iterate over valid sample windows
-        for sample in range(this_batch):
-            inputs[sample] = input_array[self._input_indices[sample]]
+            input_array = (input_array - self.input_scaling["mean"]) / self.input_scaling[
+                "std"
+            ]
             if not self.forecast_mode:
-                targets[sample] = target_array[self._output_indices[sample]]
+                # BAD NEWS: Indexing the array as commented out below causes unexpected behavior in target creation.
+                #     leaving this in here as a warning
+                # target_array = self.ds['targets'].isel(**batch).to_numpy()
+                target_array = (
+                    self.ds["targets"]
+                    .sel(channel_out=self.output_variables)
+                    .isel(**batch)
+                    .to_numpy()
+                )
+                target_array = (
+                    target_array - self.target_scaling["mean"]
+                ) / self.target_scaling["std"]
+                # target_array = ((self.ds['targets'].isel(**batch) - self.target_scaling['mean']) /
+                #                self.target_scaling['std']).compute()
+
+            logger.log(5, "loaded batch data in %0.2f s", time.time() - load_time)
+            torch.cuda.nvtx.range_pop()
+
+            torch.cuda.nvtx.range_push("CoupledTimeSeriesDataset:__getitem__:process_batch")
+            compute_time = time.time()
+            # Insolation
             if self.add_insolation:
-                decoder_inputs[sample] = (
-                    sol
-                    if self.forecast_mode
-                    else sol[self._input_indices[sample] + self._output_indices[sample]]
+                sol = insolation(
+                    self._get_forecast_sol_times(item),
+                    self.ds.lat.values,
+                    self.ds.lon.values,
+                )[:, None]
+                decoder_inputs = np.empty(
+                    (this_batch, self.input_time_dim + self.output_time_dim, 1)
+                    + self.spatial_dims,
+                    dtype="float32",
+                )
+                # update current item and reset integration_step counter for further integrations which need
+                # insolation but bypass this method see method "next_integration()" for details
+                self.curr_item = item
+                self.integration_step = 1
+
+            # Get buffers for the batches, which we'll fill in iteratively.
+            inputs = np.empty(
+                (this_batch, self.input_time_dim, len(self.input_variables))
+                + self.spatial_dims,
+                dtype="float32",
+            )
+            if not self.forecast_mode:
+                targets = np.empty(
+                    (this_batch, self.output_time_dim, len(self.output_variables))
+                    + self.spatial_dims,
+                    dtype="float32",
                 )
 
-        if not self.forecast_mode and self.add_train_noise:
-            logger.log(5, "Adding gaussian noise to inputs and integrated_couplings")
-            # Iterate over C: inputs.shape = [B, T, C, F, H, W]
-            for i in range(inputs.shape[2]):
-                inputs[:, :, i] += self.rng.normal(
-                    loc=0,
-                    scale=self.train_noise_params["inputs"][self.input_variables[i]]["std"],
-                    size=inputs[:, :, i].shape
-                )
-            for c in self.couplings:
-                for i, v in enumerate(c.variables):
-                    integrated_couplings[i, :, :] += self.rng.normal(
-                        loc=0,
-                        scale=self.train_noise_params["couplings"][v]["std"],
-                        size=integrated_couplings[i, :, :].shape
+            # Iterate over valid sample windows
+            for sample in range(this_batch):
+                inputs[sample] = input_array[self._input_indices[sample]]
+                if not self.forecast_mode:
+                    targets[sample] = target_array[self._output_indices[sample]]
+                if self.add_insolation:
+                    decoder_inputs[sample] = (
+                        sol
+                        if self.forecast_mode
+                        else sol[self._input_indices[sample] + self._output_indices[sample]]
                     )
 
-        inputs_result = [inputs]
-        if self.add_insolation:
-            inputs_result.append(decoder_inputs)
+            if not self.forecast_mode and self.add_train_noise:
+                logger.log(5, "Adding gaussian noise to inputs and integrated_couplings")
+                # Iterate over C: inputs.shape = [B, T, C, F, H, W]
+                for i in range(inputs.shape[2]):
+                    inputs[:, :, i] += self.rng.normal(
+                        loc=0,
+                        scale=self.train_noise_params["inputs"][self.input_variables[i]]["std"],
+                        size=inputs[:, :, i].shape
+                    )
+                for c in self.couplings:
+                    for i, v in enumerate(c.variables):
+                        integrated_couplings[i, :, :] += self.rng.normal(
+                            loc=0,
+                            scale=self.train_noise_params["couplings"][v]["std"],
+                            size=integrated_couplings[i, :, :].shape
+                        )
 
-        # we need to transpose channels and data:
-        # [B, T, C, F, H, W] -> [B, F, T, C, H, W]
+            inputs_result = [inputs]
+            if self.add_insolation:
+                inputs_result.append(decoder_inputs)
 
-        inputs_result = [
-            np.transpose(x, axes=(0, 3, 1, 2, 4, 5)) for x in inputs_result
-        ]
+            # we need to transpose channels and data:
+            # [B, T, C, F, H, W] -> [B, F, T, C, H, W]
 
-        if "constants" in self.ds.data_vars:
-            # Add the constants as [F, C, H, W]
-            inputs_result.append(np.swapaxes(self.ds.constants.values, 0, 1))
-            # inputs_result.append(self.ds.constants.values)
-        logger.log(5, "computed batch in %0.2f s", time.time() - compute_time)
+            inputs_result = [
+                np.transpose(x, axes=(0, 3, 1, 2, 4, 5)) for x in inputs_result
+            ]
 
-        # append integrated couplings
-        inputs_result.append(integrated_couplings)
+            if "constants" in self.ds.data_vars:
+                # Add the constants as [F, C, H, W]
+                inputs_result.append(np.swapaxes(self.ds.constants.values, 0, 1))
+                # inputs_result.append(self.ds.constants.values)
+            logger.log(5, "computed batch in %0.2f s", time.time() - compute_time)
 
-        torch.cuda.nvtx.range_pop()
+            # append integrated couplings
+            inputs_result.append(integrated_couplings)
 
-        # finish range
-        torch.cuda.nvtx.range_pop()
+            torch.cuda.nvtx.range_pop()
 
-        if self.forecast_mode:
-            return inputs_result
+            # finish range
+            torch.cuda.nvtx.range_pop()
 
-        # we also need to transpose targets
-        targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
+            if self.forecast_mode:
+                return inputs_result
 
-        return inputs_result, targets
+            # we also need to transpose targets
+            targets = np.transpose(targets, axes=(0, 3, 1, 2, 4, 5))
+
+            return inputs_result, targets
+
+        finally:
+            del input_array
+            del inputs
+            if 'target_array' in locals():
+                del target_array
+            if 'targets' in locals():
+                del targets
+            gc.collect()
 
     def next_integration(self, model_outputs, constants):
 
