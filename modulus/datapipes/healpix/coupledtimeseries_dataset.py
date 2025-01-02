@@ -368,13 +368,14 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             return inputs_result, targets
 
         finally:
-            del input_array
-            del inputs
-            if 'target_array' in locals():
-                del target_array
-            if 'targets' in locals():
-                del targets
-            gc.collect()
+            if not self.forecast_mode:
+                del input_array
+                del inputs
+                if 'target_array' in locals():
+                    del target_array
+                if 'targets' in locals():
+                    del targets
+                gc.collect()
 
     def next_integration(self, model_outputs, constants):
 
@@ -600,13 +601,14 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             return inputs_result, targets
         
         finally:
-            del input_array
-            del inputs
-            if 'target_array' in locals():
-                del target_array
-            if 'targets' in locals():
-                del targets
-            gc.collect()
+            if not self.forecast_mode:
+                del input_array
+                del inputs
+                if 'target_array' in locals():
+                    del target_array
+                if 'targets' in locals():
+                    del targets
+                gc.collect()
 
     def next_integration(self, model_outputs, constants):
         inputs_result = []
