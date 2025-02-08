@@ -64,6 +64,7 @@ class HEALPixRecUNet(Module):
         delta_time: str = "6h",
         reset_cycle: str = "24h",
         presteps: int = 1,
+        nside: int = 64,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
         couplings: list = [],
@@ -149,11 +150,21 @@ class HEALPixRecUNet(Module):
         # Build the model layers
         self.fold = HEALPixFoldFaces()
         self.unfold = HEALPixUnfoldFaces(num_faces=12)
+
+        # print(f'in_channels: {self.input_channels}')
+        # print(f'decoder_input_channels: {self.decoder_input_channels}')
+        # print(f'input_time_dim: {self.input_time_dim}')
+        # print(f'n_constants: {self.n_constants}')
+        # print(f'coupled_channels: {self.coupled_channels}')
+        # print(f'output_channels: {self.output_channels}')
+        # print(f'input_channels: {self._compute_input_channels()}\n')
+
         self.encoder = instantiate(
             config=encoder,
             input_channels=self._compute_input_channels(),
             enable_nhwc=self.enable_nhwc,
             enable_healpixpad=self.enable_healpixpad,
+            nside=nside,
         )
         self.encoder_depth = len(self.encoder.n_channels)
         self.decoder = instantiate(
@@ -161,6 +172,7 @@ class HEALPixRecUNet(Module):
             output_channels=self._compute_output_channels(),
             enable_nhwc=self.enable_nhwc,
             enable_healpixpad=self.enable_healpixpad,
+            nside=nside,
         )
 
     @property
@@ -488,6 +500,7 @@ class HEALPixRecUNet_STCoupler(HEALPixRecUNet):
             delta_time: str = "6h",
             reset_cycle: str = "24h",
             presteps: int = 1,
+            nside: int = 64,
             enable_nhwc: bool = False,
             enable_healpixpad: bool = False,
             couplings: list = [],
@@ -496,11 +509,30 @@ class HEALPixRecUNet_STCoupler(HEALPixRecUNet):
         # Store st_couplings before calling parent constructor
         self.st_couplings = st_couplings
         self.st_coupled_channels = self._compute_coupled_channels(st_couplings)
-        
+
         super().__init__(
             encoder, decoder, input_channels, output_channels, n_constants,
             decoder_input_channels, input_time_dim, output_time_dim, delta_time,
-            reset_cycle, presteps, enable_nhwc, enable_healpixpad, couplings
+            reset_cycle, presteps, enable_nhwc, enable_healpixpad
+        )
+
+        self.couplings = couplings
+        self.coupled_channels = self._compute_coupled_channels(couplings)
+    
+        self.encoder = instantiate(
+            config=encoder,
+            input_channels=self._compute_input_channels(),
+            enable_nhwc=self.enable_nhwc,
+            enable_healpixpad=self.enable_healpixpad,
+            nside=nside,
+        )
+        self.encoder_depth = len(self.encoder.n_channels)
+        self.decoder = instantiate(
+            config=decoder,
+            output_channels=self._compute_output_channels(),
+            enable_nhwc=self.enable_nhwc,
+            enable_healpixpad=self.enable_healpixpad,
+            nside=nside,
         )
         
     def _compute_input_channels(self) -> int:

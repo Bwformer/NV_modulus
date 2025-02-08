@@ -509,7 +509,11 @@ class Multi_SymmetricConvNeXtBlock(th.nn.Module):
             n_layers: int = 1,
             activation: th.nn.Module = None,
             enable_nhwc: bool = False,
-            enable_healpixpad: bool = False
+            enable_healpixpad: bool = False,
+            batch_norm: bool = False,
+            layer_norm: bool = True,
+            nside: int = 64,
+            n_downsampling: int = 1,
             ):
         """
         Parameters
@@ -536,7 +540,11 @@ class Multi_SymmetricConvNeXtBlock(th.nn.Module):
                 upscale_factor=upscale_factor,
                 activation=activation,
                 enable_nhwc=enable_nhwc,
-                enable_healpixpad=enable_healpixpad
+                enable_healpixpad=enable_healpixpad,
+                batch_norm=batch_norm,
+                layer_norm=layer_norm,
+                nside=nside,
+                n_downsampling=n_downsampling,
             ))
 
     def forward(self, x):
@@ -565,6 +573,10 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         activation: th.nn.Module = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        batch_norm: bool = False,
+        layer_norm: bool = True,
+        nside: int = 64,
+        n_downsampling: int = 1,
     ):
         """
         Parameters
@@ -620,6 +632,18 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         )
         if activation is not None:
             convblock.append(activation)
+
+        # Apply BatchNorm or LayerNorm here
+        if batch_norm:
+            convblock.append(
+                th.nn.BatchNorm2d(int(latent_channels), track_running_stats=False, affine=False)
+            )
+        elif layer_norm:
+            if n_downsampling > 1:
+                n_downsampling = 2 * (n_downsampling - 1)
+            convblock.append(
+                th.nn.LayerNorm(normalized_shape=(latent_channels, nside//n_downsampling, nside//n_downsampling), elementwise_affine=False)
+            )
         # 1x1 convolution establishing increased channels
         convblock.append(
             geometry_layer(

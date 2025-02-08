@@ -35,6 +35,9 @@ class UNetEncoder(th.nn.Module):
         dilations: list = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        batch_norm: bool = False,
+        layer_norm: bool = False,
+        nside: int = 64,
     ):
         """
         Parameters
@@ -90,6 +93,10 @@ class UNetEncoder(th.nn.Module):
                     n_layers=n_layers[n],
                     enable_nhwc=enable_nhwc,
                     enable_healpixpad=enable_healpixpad,
+                    batch_norm=batch_norm,
+                    layer_norm=layer_norm,
+                    nside = nside,
+                    n_downsampling=(n+1),
                 )
             )
             old_channels = curr_channel
