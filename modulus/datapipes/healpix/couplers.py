@@ -149,7 +149,7 @@ class ConstantCoupler:
 
         # To expediate the coupling process the coupled_forecast
         # get proper channels from coupled component output
-        output_channels = coupled_module.output_variables
+        self.output_variables = coupled_module.output_variables
         channel_indices = []
         # A bit convoluted. Prepared coupled variables
         # are given a suffix for training associated with their
@@ -159,7 +159,7 @@ class ConstantCoupler:
         #
         # for example 'z1000' is in 'z1000-48H'
         for v in self.variables: 
-            for i, oc in enumerate(output_channels):
+            for i, oc in enumerate(self.output_variables):
                 if '-' not in v:
                     if oc in v and len(oc) == len(v):
                         channel_indices.append(i)
@@ -171,10 +171,10 @@ class ConstantCoupler:
     def setup_st_coupling(self, coupled_module):
         # To expediate the coupling process the coupled_forecast
         # get proper channels from coupled component output 
-        output_channels = coupled_module.output_variables
+        self.output_st_variables = coupled_module.output_variables
         channel_indices = []
         for v in self.variables: 
-            for i, oc in enumerate(output_channels):
+            for i, oc in enumerate(self.output_st_variables):
                 if '-' not in v:
                     if oc in v and len(oc) == len(v):
                         channel_indices.append(i)

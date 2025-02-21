@@ -496,11 +496,28 @@ class HEALPixRecUNet_STCoupler(HEALPixRecUNet):
         # Store st_couplings before calling parent constructor
         self.st_couplings = st_couplings
         self.st_coupled_channels = self._compute_coupled_channels(st_couplings)
-        
+
         super().__init__(
             encoder, decoder, input_channels, output_channels, n_constants,
             decoder_input_channels, input_time_dim, output_time_dim, delta_time,
-            reset_cycle, presteps, enable_nhwc, enable_healpixpad, couplings
+            reset_cycle, presteps, enable_nhwc, enable_healpixpad
+        )
+
+        self.couplings = couplings
+        self.coupled_channels = self._compute_coupled_channels(couplings)
+    
+        self.encoder = instantiate(
+            config=encoder,
+            input_channels=self._compute_input_channels(),
+            enable_nhwc=self.enable_nhwc,
+            enable_healpixpad=self.enable_healpixpad,
+        )
+        self.encoder_depth = len(self.encoder.n_channels)
+        self.decoder = instantiate(
+            config=decoder,
+            output_channels=self._compute_output_channels(),
+            enable_nhwc=self.enable_nhwc,
+            enable_healpixpad=self.enable_healpixpad,
         )
         
     def _compute_input_channels(self) -> int:
