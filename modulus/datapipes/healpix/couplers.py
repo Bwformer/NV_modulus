@@ -197,12 +197,12 @@ class ConstantCoupler:
             :, :, :, self.coupled_channel_indices, :, :
         ].permute(0, 2, 3, 1, 4, 5)
         self.preset_coupled_fields = th.empty(
-            [self.coupled_integration_dim, self.batch_size, self.timevar_dim]
+            [self.coupled_integration_dim, coupled_fields.shape[0], self.timevar_dim]
             + list(self.spatial_dims)
         )
         for i in range(len(self.preset_coupled_fields)):
             self.preset_coupled_fields[i, :, :, :, :, :] = coupled_fields[
-                0, -1, :, :, :, :
+                :, -1, :, :, :, :
             ]
         # flag for construct integrated coupling method to use this array
         self.coupled_mode = True
@@ -249,12 +249,10 @@ class ConstantCoupler:
             )
 
             # extract coupled variables and scale lazily
-            # print(f"variables: {self.variables}")
-            # print(f"ds.inputs.channel_in: {self.ds.inputs.channel_in}")
-            # print(f"ds.inputs: {self.ds.inputs}")
             input_array = self.ds.inputs.sel(channel_in=self.variables)
-            ds = (input_array - self.coupled_scaling["mean"]) \
-                / self.coupled_scaling["std"]
+            ds = (input_array - self.coupled_scaling["mean"]) / self.coupled_scaling[
+                "std"
+            ]
             # load before entering loop for efficiency
             ds_index_range = ds.isel(time=index_range).load()
 
@@ -443,31 +441,23 @@ class TrailingAverageCoupler:
                         channel_indices.append(i)
         self.coupled_channel_indices = channel_indices
 
-        # # find averaging periods from componenet output
-        # averaging_window_max_indices = [
-        #     i // pd.Timedelta(coupled_module.time_step) for i in self.input_times
-        # ]
-        # di = averaging_window_max_indices[0]
-        # # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
-        # averaging_slices = []
-        # for j in range(self.coupled_integration_dim):
-        #     averaging_slices.append([])
-        #     for i, r in enumerate(averaging_window_max_indices):
-        #         averaging_slices[j].append(
-        #             slice(
-        #                 self.input_time_dim * j * di + i * di,
-        #                 self.input_time_dim * j * di + r,
-        #             )
-        #         )
-        # self.averaging_slices = averaging_slices
-
-        averaging_window_max_indices = [i //pd.Timedelta(coupled_module.time_step) for i in self.input_times]
+        # find averaging periods from componenet output
+        averaging_window_max_indices = [
+            i // pd.Timedelta(coupled_module.time_step) for i in self.input_times
+        ]
         di = averaging_window_max_indices[0]
+        # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
         averaging_slices = []
-        for i,r in enumerate(averaging_window_max_indices):
-             averaging_slices.append(slice(i*di,r))
-        self.averaging_slices=averaging_slices
-
+        for j in range(self.coupled_integration_dim):
+            averaging_slices.append([])
+            for i, r in enumerate(averaging_window_max_indices):
+                averaging_slices[j].append(
+                    slice(
+                        self.input_time_dim * j * di + i * di,
+                        self.input_time_dim * j * di + r,
+                    )
+                )
+        self.averaging_slices = averaging_slices
 
     def reset_coupler(self):
 
@@ -476,52 +466,21 @@ class TrailingAverageCoupler:
         self.preset_coupled_fields = None
 
     def set_coupled_fields(self, coupled_fields):
-        '''
-        only used for forecasting
-        coupled_fields is atmos_output [B, F, T, C, H, W],   [1, 12, 16, 8, 32, 32] 
-        '''
-        if self.presteps == 1:
-            coupled_fields_prestep = coupled_fields[0] # come from atmos_input[-1], [2, 1, 8, 12, 32, 32]
-            coupled_fields_average = coupled_fields[1][:,:,:,self.coupled_channel_indices,:,:]
-            averaging_periods = [] 
-            for s in self.averaging_slices:
-                averaging_periods.append(coupled_fields_average[:,:,s,:,:,:].mean(dim=2,keepdim=True))
-            preset_coupled_fields = th.concat(averaging_periods, dim=3).permute(2,0,3,1,4,5)
-            # preset_coupled_fields is [T, B, C, F, H, W], torch.Size([1, 1, 8, 12, 32, 32])
-            # print(f"coupled_fields_prestep: {coupled_fields_prestep.shape}")
-            # print(f"preset_coupled_fields: {preset_coupled_fields.shape}")
-            self.preset_coupled_fields = th.cat([coupled_fields_prestep, preset_coupled_fields], dim=0)
-            # flag for construct integrated coupling method to use this array
-            self.coupled_mode = True 
 
-        elif self.presteps == 0:
-            coupled_fields = coupled_fields[:,:,:,self.coupled_channel_indices,:,:]
-            averaging_periods = [] 
-            for s in self.averaging_slices:
-                averaging_periods.append(coupled_fields[:,:,s,:,:,:].mean(dim=2,keepdim=True))
-            self.preset_coupled_fields = th.concat(averaging_periods, dim=3).permute(2,0,3,1,4,5)
-            # preset_coupled_fields is [T, B, C, F, H, W], torch.Size([1, 1, 4, 12, 32, 32])
-            # flag for construct integrated coupling method to use this array
-            self.coupled_mode = True
-
-
-        # # coupled_fields is [B, F, T, C, H, W],  e.g. [1, 12, 16, 8, 32, 32]
-        # coupled_fields = coupled_fields[:, :, :, self.coupled_channel_indices, :, :]
-        # # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
-        # coupled_averaging_periods = []
-        # for j in range(self.coupled_integration_dim):
-        #     averaging_periods = [
-        #         coupled_fields[:, :, s, :, :, :].mean(dim=2, keepdim=True)
-        #         for s in self.averaging_slices[j]
-        #     ]
-        #     coupled_averaging_periods.append(th.concat(averaging_periods, dim=3))
-        # self.preset_coupled_fields = th.concat(
-        #     coupled_averaging_periods, dim=2
-        # ).permute(2, 0, 3, 1, 4, 5)
-        # # self.preset_coupled_fields is [T, B, C, F, H, W],  e.g. torch.Size([1, 1, 4, 12, 32, 32])
-        # # flag for construct integrated coupling method to use this array
-        # self.coupled_mode = True
-
+        coupled_fields = coupled_fields[:, :, :, self.coupled_channel_indices, :, :]
+        # TODO: Now support output_time_dim =/= input_time_dim, but presteps need to be 0, will add support for presteps>0
+        coupled_averaging_periods = []
+        for j in range(self.coupled_integration_dim):
+            averaging_periods = [
+                coupled_fields[:, :, s, :, :, :].mean(dim=2, keepdim=True)
+                for s in self.averaging_slices[j]
+            ]
+            coupled_averaging_periods.append(th.concat(averaging_periods, dim=3))
+        self.preset_coupled_fields = th.concat(
+            coupled_averaging_periods, dim=2
+        ).permute(2, 0, 3, 1, 4, 5)
+        # flag for construct integrated coupling method to use this array
+        self.coupled_mode = True
 
 
     def update_scaling(self, integrated_couplings, scaling_da):
