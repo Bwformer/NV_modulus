@@ -732,8 +732,8 @@ class GRN(th.nn.Module):
     """
     def __init__(self, dim):
         super().__init__()
-        self.gamma = th.nn.Parameter(torch.zeros(1, 1, 1, dim))
-        self.beta = th.nn.Parameter(torch.zeros(1, 1, 1, dim))
+        self.gamma = th.nn.Parameter(torch.zeros(1, dim, 1, 1))
+        self.beta = th.nn.Parameter(torch.zeros(1, dim, 1, 1))
 
     def forward(self, x):
         Gx = torch.norm(x, p=2, dim=(2,3), keepdim=True)
@@ -846,7 +846,6 @@ class downsample_conv_block(th.nn.Module):
     """
     def __init__(
             self,
-            geometry_layer: th.nn.Module = HEALPixLayer,
             in_channels: int = 1,
             out_channels: int = 1,
             enable_nhwc: bool = False,
@@ -854,15 +853,7 @@ class downsample_conv_block(th.nn.Module):
     ):
         super().__init__()
         self.layernorm = LayerNorm(in_channels)
-        self.conv2d = geometry_layer(
-            layer=torch.nn.Conv2d,
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=2,
-            stride=2,
-            enable_nhwc=enable_nhwc,
-            enable_healpixpad=enable_healpixpad,
-        )
+        self.conv2d = th.nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2)
     def forward(self, x):
         x = self.layernorm(x)
         return self.conv2d(x)
