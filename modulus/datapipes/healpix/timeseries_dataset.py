@@ -278,29 +278,29 @@ class TimeSeriesDataset(Dataset, Datapipe):
                 f"Target channels {missing} not found in the scaling config dict data.scaling ({list(self.scaling.keys())})"
             )
 
-        try:
-            # not all datasets will have constants
-            if "constants" in self.ds.data_vars:
-                self.constant_scaling = scaling_da.sel(
-                    index=self.ds.channel_c.values
-                ).rename({"index": "channel_out"})
-                self.constant_scaling = {
-                    "mean": np.expand_dims(
-                        self.constant_scaling["mean"].to_numpy(), (1, 2, 3)
-                    ),
-                    "std": np.expand_dims(
-                        self.constant_scaling["std"].to_numpy(), (1, 2, 3)
-                    ),
-                }
-        except (ValueError, KeyError):
-            missing = [
-                m
-                for m in self.ds.channel_c.values
-                if m not in list(self.scaling.keys())
-            ]
-            raise KeyError(
-                f"Constant channels {missing} not found in the scaling config dict data.scaling ({list(self.scaling.keys())})"
-            )
+        # try:
+        #     # not all datasets will have constants
+        #     if "constants" in self.ds.data_vars:
+        #         self.constant_scaling = scaling_da.sel(
+        #             index=self.ds.channel_c.values
+        #         ).rename({"index": "channel_out"})
+        #         self.constant_scaling = {
+        #             "mean": np.expand_dims(
+        #                 self.constant_scaling["mean"].to_numpy(), (1, 2, 3)
+        #             ),
+        #             "std": np.expand_dims(
+        #                 self.constant_scaling["std"].to_numpy(), (1, 2, 3)
+        #             ),
+        #         }
+        # except (ValueError, KeyError):
+        #     missing = [
+        #         m
+        #         for m in self.ds.channel_c.values
+        #         if m not in list(self.scaling.keys())
+        #     ]
+        #     raise KeyError(
+        #         f"Constant channels {missing} not found in the scaling config dict data.scaling ({list(self.scaling.keys())})"
+        #     )
 
     def __len__(self):
         """Get number of samples in the dataset
