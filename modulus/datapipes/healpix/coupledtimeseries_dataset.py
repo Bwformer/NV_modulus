@@ -445,12 +445,6 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             couplings: Sequence = [],
             st_couplings: Sequence = []
     ):
-        """
-        Dataset for coupling TimesSeriesDataset with external inputs from various earth system 
-        components, including separate handling for space-time couplings.
-
-        :param st_couplings: a Sequence of dictionaries that define the mechanics of space-time couplings
-        """
         self.input_variables = input_variables 
         self.output_variables = input_variables if output_variables is None else output_variables 
         
@@ -581,7 +575,7 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
                                                     axis=2)
                 inputs_result.append(integrated_couplings)
 
-            # Append space-time couplings
+            # Append strato couplings
             if len(self.st_couplings) > 0:
                 st_integrated_couplings = np.concatenate([c.construct_integrated_couplings(batch, this_batch, if_st=True)
                                                         for c in self.st_couplings],
@@ -634,7 +628,7 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
                                                   axis=2)
             inputs_result.append(torch.tensor(integrated_couplings))
 
-        # Append space-time couplings inputs
+        # Append strato couplings inputs
         if len(self.st_couplings) > 0:
             st_integrated_couplings = np.concatenate([c.construct_integrated_couplings(if_st=True)
                                                       for c in self.st_couplings],
