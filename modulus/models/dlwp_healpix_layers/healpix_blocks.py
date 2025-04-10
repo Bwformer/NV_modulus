@@ -614,7 +614,7 @@ class SymmetricConvNeXtBlock(th.nn.Module):
                 layer=torch.nn.Conv2d,
                 in_channels=in_channels,
                 out_channels=int(latent_channels),
-                kernel_size=7,
+                kernel_size=kernel_size,
                 dilation=dilation,
                 enable_nhwc=enable_nhwc,
                 enable_healpixpad=enable_healpixpad,
