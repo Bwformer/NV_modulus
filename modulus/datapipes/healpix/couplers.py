@@ -494,7 +494,7 @@ class TrailingAverageCoupler:
 
         # print(f"old_scaling: {old_scaling}")
 
-        n_avergaing_periods = len(self.averaging_slices)
+        n_avergaing_periods = len(self.averaging_slices) *2
         old_scaling_mean = np.expand_dims( np.tile(old_scaling['mean'].to_numpy(), n_avergaing_periods),
                                                         (0,1,3,4,5))
         old_scaling_std = np.expand_dims( np.tile(old_scaling['std'].to_numpy(), n_avergaing_periods),
