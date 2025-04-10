@@ -508,7 +508,7 @@ class HEALPixRecUNet_STCoupler(HEALPixRecUNet):
     
         self.encoder = instantiate(
             config=encoder,
-            input_channels=self._compute_input_channels(),
+            input_channels=self._compute_st_input_channels(),
             enable_nhwc=self.enable_nhwc,
             enable_healpixpad=self.enable_healpixpad,
         )
@@ -520,7 +520,7 @@ class HEALPixRecUNet_STCoupler(HEALPixRecUNet):
             enable_healpixpad=self.enable_healpixpad,
         )
         
-    def _compute_input_channels(self) -> int:
+    def _compute_st_input_channels(self) -> int:
         # Override parent method to include st_coupled_channels
         return self.input_time_dim * (self.input_channels + self.decoder_input_channels) \
                + self.n_constants + self.coupled_channels + self.st_coupled_channels

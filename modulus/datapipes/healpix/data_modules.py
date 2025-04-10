@@ -1252,10 +1252,12 @@ class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     batch_size=self.batch_size,
                 )
 
-                # dataset = dataset.sel(
-                #     channel_in=self.input_variables,
-                #     channel_out=self.output_variables,
-                # )
+                dataset = dataset.sel(
+                    channel_in=self.input_variables + coupled_variables,
+                    channel_out=self.output_variables,
+                )
+                if self.constants is not None:
+                    dataset = dataset.sel(channel_c=list(self.constants.values()))
             else:
                 dataset = open_fn(
                     input_variables=self.input_variables + coupled_variables,
