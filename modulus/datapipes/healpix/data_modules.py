@@ -211,8 +211,7 @@ def open_time_series_dataset_classic_prebuilt(
 
     if not ds_path.exists():
         raise FileNotFoundError(f"Dataset doesn't appear to exist at {ds_path}")
-
-    result = xr.open_zarr(ds_path, chunks={"time": batch_size})
+    result = xr.open_dataset(ds_path)
     
     return result
 
