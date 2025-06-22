@@ -20,7 +20,7 @@ import torch
 import torch as th
 
 from .healpix_layers import HEALPixLayer
-
+from timm.models.layers import DropPath
 #
 # RECURRENT BLOCKS
 #
@@ -685,6 +685,255 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         return self.skip_module(x) + self.convblock(x)
 
 
+
+class Multi_ConvNeXtBlock_v2(th.nn.Module):
+    """
+    Class for creating multi-block ConvNeXtBlock_v2. Defaults to all ConvNeXtBlock_v2s having same parameters
+    """
+
+    def __init__(
+        self,
+        geometry_layer: th.nn.Module = HEALPixLayer,
+        in_channels: int = 3,
+        latent_channels: int = 1,
+        out_channels: int = 1,
+        kernel_size: int = 3,
+        dilation: int = 1,
+        upscale_factor: int = 4,
+        n_layers: int = 1,
+        activation: th.nn.Module = None,
+        enable_nhwc: bool = False,
+        enable_healpixpad: bool = False,
+    ):
+        """
+        Parameters
+        ----------
+        n_layers: int, optional
+            The number of SymmetricConvNeXt Blocks
+        """
+        super().__init__()
+
+        # Create a ModuleList to store complete blocks
+        self.blocks = th.nn.ModuleList()
+
+        for i in range(n_layers):
+            curr_in = in_channels if i == 0 else out_channels
+
+            # Create a single block as a separate Module
+            self.blocks.append(
+                ConvNeXtBlock_v2(
+                    geometry_layer=geometry_layer,
+                    in_channels=curr_in,
+                    latent_channels=latent_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    dilation=dilation,
+                    upscale_factor=upscale_factor,
+                    activation=activation,
+                    enable_nhwc=enable_nhwc,
+                    enable_healpixpad=enable_healpixpad,
+                )
+            )
+
+    def forward(self, x):
+        out = x
+        for block in self.blocks:
+            out = block(out)
+        return out
+
+
+class ConvNeXtBlock_v2(th.nn.Module):
+    """Another modification of ConvNeXt_v2 block. adding LayerNorm, GRN and DropPath
+    """
+
+    def __init__(
+        self,
+        geometry_layer: th.nn.Module = HEALPixLayer,
+        in_channels: int = 3,
+        latent_channels: int = 1,
+        out_channels: int = 1,
+        kernel_size: int = 3,
+        dilation: int = 1,
+        n_layers: int = 1,  # not used, but required for hydra instantiation
+        upscale_factor: int = 4,
+        activation: th.nn.Module = None,
+        enable_nhwc: bool = False,
+        enable_healpixpad: bool = False,
+        drop_path: float = 0.2,
+    ):
+        """
+        Parameters
+        ----------
+        geometry_layer: torch.nn.Module, optional
+            The wrapper for the geometry layer
+        in_channels: int, optional
+            The number of input channels
+        latent_channels: int, optional
+            Number of latent channels
+        out_channels: int, optional
+            The number of output channels
+        kernel_size: int, optional
+            Size of the convolutioonal kernels
+        dilation: int, optional
+            Spacing between kernel points, passed to torch.nn.Conv2d
+        upscale_factor: int, optional
+            Upscale factor to apply on the number of latent channels
+        activation: torch.nn.Module, optional
+            Activation function to use between layers
+        enable_nhwc: bool, optional
+            Enable nhwc format, passed to wrapper
+        enable_healpixpad: bool, optional
+            If HEALPixPadding should be enabled, passed to wrapper
+        drop_path (float): Stochastic depth rate. Default: 0.2
+        """
+        super().__init__()
+
+        if in_channels == int(latent_channels):
+            self.skip_module = lambda x: x  # Identity-function required in forward pass
+        else:
+            self.skip_module = geometry_layer(
+                layer=torch.nn.Conv2d,
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=1,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            )
+
+        # 1st ConvNeXt block, the output of this one remains internal
+        convblock = []
+        # 7x7 convolution establishing latent channels channels
+        convblock.append(
+            geometry_layer(
+                layer=torch.nn.Conv2d,
+                in_channels=in_channels,
+                out_channels=int(latent_channels),
+                kernel_size=kernel_size,
+                dilation=dilation,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            )
+        )
+        # Apply LayerNorm
+        convblock.append(LayerNorm(int(latent_channels), eps=1e-6))
+        # if batch_norm:
+        #     convblock.append(
+        #         th.nn.BatchNorm2d(int(latent_channels), track_running_stats=False, affine=False)
+        #     )
+        # if activation is not None:
+        #     convblock.append(activation)
+        # # Apply Dropout 
+        # if dropout: 
+        #     convblock.append(th.nn.Dropout2d(p=dropout))
+
+        # 1x1 convolution establishing increased channels
+        convblock.append(
+            geometry_layer(
+                layer=torch.nn.Conv2d,
+                in_channels=int(latent_channels),
+                out_channels=int(latent_channels * upscale_factor),
+                kernel_size=1,
+                dilation=dilation,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            )
+        )
+        # if activation is not None:
+        convblock.append(activation)
+        # apply Global Response Normalization
+        convblock.append(GRN(int(latent_channels * upscale_factor)))
+
+        # 1x1 convolution returning to latent channels
+        convblock.append(
+            geometry_layer(
+                layer=torch.nn.Conv2d,
+                in_channels=int(latent_channels * upscale_factor),
+                out_channels=out_channels,
+                kernel_size=1,
+                dilation=dilation,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            )
+        )
+        # if activation is not None:
+        #     convblock.append(activation)
+        # # 3x3 convolution from latent channels to latent channels
+        # convblock.append(
+        #     geometry_layer(
+        #         layer=torch.nn.Conv2d,
+        #         in_channels=int(latent_channels),
+        #         out_channels=out_channels,  # int(latent_channels),
+        #         kernel_size=kernel_size,
+        #         dilation=dilation,
+        #         enable_nhwc=enable_nhwc,
+        #         enable_healpixpad=enable_healpixpad,
+        #     )
+        # )
+        # if activation is not None:
+        #     convblock.append(activation)
+        self.convblock = th.nn.Sequential(*convblock)
+
+        self.drop_path = DropPath(drop_path) if drop_path > 0. else th.nn.Identity()
+
+    def forward(self, x):
+        """Forward pass of the SymmetricConvNextBlock
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            inputs to the forward pass
+
+        Returns
+        -------
+        torch.Tensor
+            result of the forward pass
+        """
+        # residual connection with reshaped inpute and output of conv block
+        return self.skip_module(x) + self.drop_path(self.convblock(x))
+
+
+class LayerNorm(th.nn.Module):
+    """ 
+    LayerNorm that supports two data formats: channels_last or channels_first (default). 
+    The ordering of the dimensions in the inputs. channels_last corresponds to inputs with 
+    shape (batch_size, height, width, channels) while channels_first corresponds to inputs 
+    with shape (batch_size, channels, height, width).
+    Code modified from
+    https://github.com/facebookresearch/ConvNeXt/blob/main/models/convnext.py
+    """
+    def __init__(self, normalized_shape, eps=1e-6, data_format="channels_first"):
+        super().__init__()
+        self.weight = th.nn.Parameter(torch.ones(normalized_shape))
+        self.bias = th.nn.Parameter(torch.zeros(normalized_shape))
+        self.eps = eps
+        self.data_format = data_format
+        if self.data_format not in ["channels_last", "channels_first"]:
+            raise NotImplementedError 
+        self.normalized_shape = (normalized_shape, )
+    
+    def forward(self, x):
+        if self.data_format == "channels_last":
+            return th.nn.functional.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+        elif self.data_format == "channels_first":
+            u = x.mean(1, keepdim=True)
+            s = (x - u).pow(2).mean(1, keepdim=True)
+            x = (x - u) / torch.sqrt(s + self.eps)
+            x = self.weight[:, None, None] * x + self.bias[:, None, None]
+            return x
+
+class GRN(th.nn.Module):
+    """ GRN (Global Response Normalization) layer
+    """
+    def __init__(self, dim):
+        super().__init__()
+        self.gamma = th.nn.Parameter(torch.zeros(1, dim, 1, 1))
+        self.beta = th.nn.Parameter(torch.zeros(1, dim, 1, 1))
+
+    def forward(self, x):
+        Gx = torch.norm(x, p=2, dim=(2,3), keepdim=True)
+        Nx = Gx / (Gx.mean(dim=1, keepdim=True) + 1e-6)
+        return self.gamma * (x * Nx) + self.beta + x
+
 #
 # DOWNSAMPLING BLOCKS
 #
@@ -785,6 +1034,23 @@ class AvgPool(th.nn.Module):
         """
         return self.avgpool(x)
 
+class downsample_conv_block(th.nn.Module):
+    """use conv2d(kernel=2, stride=2) to downsample the input tensor
+    -> layernorm -> conv2d
+    """
+    def __init__(
+            self,
+            in_channels: int = 1,
+            out_channels: int = 1,
+            enable_nhwc: bool = False,
+            enable_healpixpad: bool = False,
+    ):
+        super().__init__()
+        self.layernorm = LayerNorm(in_channels)
+        self.conv2d = th.nn.Conv2d(in_channels, out_channels, kernel_size=2, stride=2)
+    def forward(self, x):
+        x = self.layernorm(x)
+        return self.conv2d(x)
 
 #
 # UPSAMPLING BLOCKS

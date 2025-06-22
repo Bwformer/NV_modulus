@@ -32,6 +32,7 @@ class UNetDecoder(th.nn.Module):
         recurrent_block: DictConfig = None,
         n_channels: Sequence = (64, 32, 16),
         n_layers: Sequence = (1, 2, 2),
+        conv_kernel_size: Sequence = (3, 3, 3),
         output_channels: int = 1,
         dilations: list = None,
         enable_nhwc: bool = False,
@@ -96,6 +97,7 @@ class UNetDecoder(th.nn.Module):
                 out_channels=next_channel,
                 dilation=dilations[n],
                 n_layers=n_layers[n],
+                kernel_size=conv_kernel_size[n],
                 enable_nhwc=enable_nhwc,
                 enable_healpixpad=enable_healpixpad,
             )
