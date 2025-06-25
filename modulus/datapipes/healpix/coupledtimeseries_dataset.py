@@ -232,7 +232,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
             self.ds["inputs"]
             .sel(channel_in=self.input_variables)
             .isel(**batch)
-            .values.copy()
+            .to_numpy()
         )
         # retrieve coupled inputs
         if len(self.couplings) > 0:
@@ -262,7 +262,7 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
                 self.ds["targets"]
                 .sel(channel_out=self.output_variables)
                 .isel(**batch)
-                .values.copy()
+                .to_numpy()
             )
             target_array = (
                 target_array - self.target_scaling["mean"]
@@ -333,11 +333,11 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
                         size=integrated_couplings[i, :, :].shape
                     )
 
-        # Explicitly delete large temporary arrays so they can be garbage-collected
-        del input_array
-        if not self.forecast_mode:
-            del target_array
-        gc.collect()
+        # # Explicitly delete large temporary arrays so they can be garbage-collected
+        # del input_array
+        # if not self.forecast_mode:
+        #     del target_array
+        # gc.collect()
 
         inputs_result = [inputs]
         if self.add_insolation:
@@ -525,7 +525,7 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             self.ds['inputs']
             .sel(channel_in=self.input_variables)
             .isel(**batch)
-            .values.copy()
+            .to_numpy()
         )
         # Append integrated couplings 
         if len(self.couplings) > 0:
@@ -545,7 +545,7 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
                 self.ds['targets']
                 .sel(channel_out=self.output_variables)
                 .isel(**batch)
-                .values.copy()
+                .to_numpy()
                 )
             target_array = (target_array - self.target_scaling['mean']) / self.target_scaling['std']
             
@@ -576,11 +576,11 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
                 decoder_inputs[sample] = sol if self.forecast_mode else \
                     sol[self._input_indices[sample] + self._output_indices[sample]]
 
-        # Explicitly delete large temporary arrays so they can be garbage-collected
-        del input_array
-        if not self.forecast_mode:
-            del target_array
-        gc.collect()
+        # # Explicitly delete large temporary arrays so they can be garbage-collected
+        # del input_array
+        # if not self.forecast_mode:
+        #     del target_array
+        # gc.collect()
 
         inputs_result = [inputs]
         if self.add_insolation:

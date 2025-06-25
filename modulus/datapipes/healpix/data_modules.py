@@ -36,7 +36,8 @@ from omegaconf import DictConfig
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
-from modulus.distributed import DistributedManager
+# from modulus.distributed import DistributedManager
+import torch.distributed as dist
 
 from .coupledtimeseries_dataset import CoupledTimeSeriesDataset, ST_CoupledTimeSeriesDataset
 from .timeseries_dataset import TimeSeriesDataset
@@ -534,14 +535,14 @@ class TimeSeriesDataModule:
         else:
             raise ValueError("'data_format' must be one of ['classic']")
 
-        # make sure distributed manager is initalized
-        if not DistributedManager.is_initialized():
-            DistributedManager.initialize()
-        dist = DistributedManager()
+        # # make sure distributed manager is initalized
+        # if not DistributedManager.is_initialized():
+        #     DistributedManager.initialize()
+        # dist = DistributedManager()
 
-        if torch.distributed.is_initialized():
+        if dist.is_initialized():
             if self.prebuilt_dataset:
-                if dist.rank == 0:
+                if dist.get_rank() == 0:
                     create_fn(
                         src_directory=self.src_directory,
                         dst_directory=self.dst_directory,
@@ -557,7 +558,7 @@ class TimeSeriesDataModule:
                     )
 
                 # wait for rank 0 to complete, because then the files are guaranteed to exist
-                torch.distributed.barrier()
+                dist.barrier(device_ids=[torch.cuda.current_device()])
 
                 dataset = open_fn(
                     directory=self.dst_directory,
@@ -969,14 +970,14 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             raise ValueError("'data_format' must be one of ['classic', 'zarr']")
 
         coupled_variables = self._get_coupled_vars()
-        # make sure distributed manager is initalized
-        if not DistributedManager.is_initialized():
-            DistributedManager.initialize()
-        dist = DistributedManager()
+        # # make sure distributed manager is initalized
+        # if not DistributedManager.is_initialized():
+        #     DistributedManager.initialize()
+        # dist = DistributedManager()
 
-        if torch.distributed.is_initialized():
+        if dist.is_initialized():
             if self.prebuilt_dataset:
-                if dist.rank == 0:
+                if dist.get_rank() == 0:
                     create_fn(
                         src_directory=self.src_directory,
                         dst_directory=self.dst_directory,
@@ -992,7 +993,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     )
 
                 # wait for rank 0 to complete, because then the files are guaranteed to exist
-                torch.distributed.barrier()
+                dist.barrier(device_ids=[torch.cuda.current_device()])
 
                 dataset = open_fn(
                     directory=self.dst_directory,
@@ -1069,7 +1070,7 @@ class CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                 couplings=self.couplings,
                 add_train_noise=self.add_train_noise,
                 train_noise_params=self.train_noise_params,
-                train_noise_seed=self.train_noise_seed + int(dist.rank),
+                train_noise_seed=self.train_noise_seed, # + int(dist.rank),
             )
             self.val_dataset = CoupledTimeSeriesDataset(
                 dataset.sel(
@@ -1220,14 +1221,14 @@ class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
             raise ValueError("'data_format' must be one of ['classic', 'zarr']")
 
         coupled_variables = self._get_coupled_vars()
-        # make sure distributed manager is initalized
-        if not DistributedManager.is_initialized():
-            DistributedManager.initialize()
-        dist = DistributedManager()
+        # # make sure distributed manager is initalized
+        # if not DistributedManager.is_initialized():
+        #     DistributedManager.initialize()
+        # dist = DistributedManager()
 
-        if torch.distributed.is_initialized():
+        if dist.is_initialized():
             if self.prebuilt_dataset:
-                if dist.rank == 0:
+                if dist.get_rank() == 0:
                     create_fn(
                         src_directory=self.src_directory,
                         dst_directory=self.dst_directory,
@@ -1243,7 +1244,7 @@ class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                     )
 
                 # wait for rank 0 to complete, because then the files are guaranteed to exist
-                torch.distributed.barrier()
+                dist.barrier(device_ids=[torch.cuda.current_device()])
 
                 dataset = open_fn(
                     directory=self.dst_directory,
