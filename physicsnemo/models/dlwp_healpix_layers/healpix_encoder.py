@@ -36,6 +36,7 @@ class UNetEncoder(th.nn.Module):
         dilations: list = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        dropout: float = 0.0,
     ):
         """
         Parameters
@@ -59,6 +60,8 @@ class UNetEncoder(th.nn.Module):
             If channel last format should be used
         enable_healpixpad, bool, optional
             If the healpixpad library should be used (if installed)
+        dropout, float, optional
+            Probability to use in dropout (if 0, don't use dropout)
         """
         super().__init__()
         self.n_channels = n_channels
@@ -73,22 +76,16 @@ class UNetEncoder(th.nn.Module):
         for n, curr_channel in enumerate(n_channels):
             modules = list()
             if n > 0:
-                # create a dictionary of parameters, only passing those required by down_sampling_block
-                block_kwargs = {}
-                if 'in_channels' in down_sampling_block.get('params', {}):
-                    block_kwargs['in_channels'] = old_channels
-                if 'out_channels' in down_sampling_block.get('params', {}):
-                    block_kwargs['out_channels'] = old_channels
-                if 'enable_nhwc' in down_sampling_block.get('params', {}):
-                    block_kwargs['enable_nhwc'] = enable_nhwc
-                if 'enable_healpixpad' in down_sampling_block.get('params', {}):
-                    block_kwargs['enable_healpixpad'] = enable_healpixpad
-                modules.append(
-                    instantiate(
-                        config=down_sampling_block,
-                        **block_kwargs
-                    )
-                )
+                kwargs = {
+                    "config": down_sampling_block,
+                    "enable_nhwc": enable_nhwc,
+                    "enable_healpixpad": enable_healpixpad,
+                }
+                # {'_target_': 'physicsnemo.models.dlwp_healpix_layers.healpix_blocks.downsample_conv_block'}
+                if "downsample_conv" in down_sampling_block._target_:
+                    kwargs["in_channels"] = old_channels
+                    kwargs["out_channels"] = old_channels
+                modules.append(instantiate(**kwargs))
 
             modules.append(
                 instantiate(
@@ -101,6 +98,7 @@ class UNetEncoder(th.nn.Module):
                     n_layers=n_layers[n],
                     enable_nhwc=enable_nhwc,
                     enable_healpixpad=enable_healpixpad,
+                    dropout=dropout,
                 )
             )
             old_channels = curr_channel

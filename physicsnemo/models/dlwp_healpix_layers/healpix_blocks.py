@@ -512,6 +512,9 @@ class Multi_SymmetricConvNeXtBlock(th.nn.Module):
         activation: th.nn.Module = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        batch_norm: bool = False,
+        layer_norm: bool = False,
+        dropout: float = 0.0,
     ):
         """
         Parameters
@@ -540,6 +543,9 @@ class Multi_SymmetricConvNeXtBlock(th.nn.Module):
                     activation=activation,
                     enable_nhwc=enable_nhwc,
                     enable_healpixpad=enable_healpixpad,
+                    batch_norm=batch_norm,
+                    layer_norm=layer_norm,
+                    dropout=dropout,
                 )
             )
 
@@ -569,6 +575,9 @@ class SymmetricConvNeXtBlock(th.nn.Module):
         activation: th.nn.Module = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        batch_norm: bool = False,
+        layer_norm: bool = False,
+        dropout: float = 0.0,
     ):
         """
         Parameters
@@ -622,8 +631,22 @@ class SymmetricConvNeXtBlock(th.nn.Module):
                 enable_healpixpad=enable_healpixpad,
             )
         )
+
+        # Apply BatchNorm or LayerNorm here
+        if batch_norm:
+            convblock.append(
+                th.nn.BatchNorm2d(int(latent_channels), track_running_stats=False, affine=False)
+            )
+        elif layer_norm:
+            convblock.append(LayerNorm(int(latent_channels), eps=1e-6))
+
         if activation is not None:
             convblock.append(activation)
+
+        # Apply Dropout 
+        if dropout: 
+            convblock.append(th.nn.Dropout2d(p=dropout))
+
         # 1x1 convolution establishing increased channels
         convblock.append(
             geometry_layer(
