@@ -38,7 +38,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from physicsnemo.distributed import DistributedManager
 
-from .coupledtimeseries_dataset import CoupledTimeSeriesDataset
+from .coupledtimeseries_dataset import CoupledTimeSeriesDataset, ST_CoupledTimeSeriesDataset
 from .timeseries_dataset import TimeSeriesDataset
 
 logger = logging.getLogger(__name__)
