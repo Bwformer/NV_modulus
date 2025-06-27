@@ -1165,9 +1165,15 @@ class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
         forecast_init_times: Optional[Sequence] = None,
         couplings: Sequence = None,
         st_couplings: Sequence = None,
+        add_train_noise: Optional[bool] = False,
+        train_noise_params: Optional[DictConfig] = None,
+        train_noise_seed: Optional[int] = 42,
     ):
         self.couplings = couplings
         self.st_couplings = st_couplings
+        self.add_train_noise = add_train_noise
+        self.train_noise_params = train_noise_params
+        self.train_noise_seed = train_noise_seed
         super().__init__(
             src_directory,
             dst_directory,
@@ -1319,6 +1325,9 @@ class ST_CoupledTimeSeriesDataModule(TimeSeriesDataModule):
                 add_insolation=self.add_insolation,
                 couplings=self.couplings,
                 st_couplings=self.st_couplings,
+                add_train_noise=self.add_train_noise,
+                train_noise_params=self.train_noise_params,
+                train_noise_seed=self.train_noise_seed + int(dist.rank),
             )
             self.val_dataset = ST_CoupledTimeSeriesDataset(
                 dataset.sel(

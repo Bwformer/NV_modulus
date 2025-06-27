@@ -312,18 +312,22 @@ class CoupledTimeSeriesDataset(TimeSeriesDataset):
         if not self.forecast_mode and self.add_train_noise:
             logger.log(5, "Adding gaussian noise to inputs and integrated_couplings")
             # Iterate over C: inputs.shape = [B, T, C, F, H, W]
+            # inputs shape: (4, 2, 9, 12, 64, 64)
+            # print(f"inputs shape: {inputs.shape}")
             for i in range(inputs.shape[2]):
                 inputs[:, :, i] += self.rng.normal(
                     loc=0,
                     scale=self.train_noise_params["inputs"][self.input_variables[i]]["std"],
                     size=inputs[:, :, i].shape,
                 )
+            # print(f"integrated_couplings shape: {integrated_couplings.shape}")
+            # (2, 4, 18, 12, 64, 64): [T, B, C*T, F, H, W]
             for c in self.couplings:
-                for i, v in enumerate(c.variables):
-                    integrated_couplings[i, :, :] += self.rng.normal(
+                for i in range(integrated_couplings.shape[2]):
+                    integrated_couplings[:, :, i] += self.rng.normal(
                         loc=0,
-                        scale=self.train_noise_params["couplings"][v]["std"],
-                        size=integrated_couplings[i, :, :].shape,
+                        scale=self.train_noise_params["couplings"][c.variables[i%(len(c.variables))]]["std"],
+                        size=integrated_couplings[:, :, i].shape,
                     )
 
         # # Explicitly delete large temporary arrays so they can be garbage-collected
@@ -422,7 +426,11 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             add_insolation: bool = False,
             forecast_init_times: Optional[Sequence] = None,
             couplings: Sequence = [],
-            st_couplings: Sequence = []
+            st_couplings: Sequence = [],
+            meta: DatapipeMetaData = MetaData(),
+            add_train_noise: bool = False,
+            train_noise_params: DictConfig = None,
+            train_noise_seed: int = 42,
     ):
         """
         Dataset for coupling TimesSeriesDataset with external inputs from various earth system 
@@ -432,7 +440,11 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
         """
         self.input_variables = input_variables 
         self.output_variables = input_variables if output_variables is None else output_variables 
-        
+        self.add_train_noise = add_train_noise
+        self.train_noise_params = train_noise_params
+        if self.add_train_noise:
+            self.rng = np.random.default_rng(train_noise_seed)
+
         self.couplings = [
             getattr(couplers, c['coupler'])(
                 dataset,
@@ -459,6 +471,7 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             drop_last=drop_last,
             add_insolation=add_insolation,
             forecast_init_times=forecast_init_times,
+            meta=meta,
         )
         
         # Calculate static indices for coupling 
@@ -562,6 +575,39 @@ class ST_CoupledTimeSeriesDataset(TimeSeriesDataset):
             if self.add_insolation:
                 decoder_inputs[sample] = sol if self.forecast_mode else \
                     sol[self._input_indices[sample] + self._output_indices[sample]]
+        
+
+        if not self.forecast_mode and self.add_train_noise:
+            logger.log(5, "Adding gaussian noise to inputs and integrated_couplings")
+            # Iterate over C: inputs.shape = [B, T, C, F, H, W]
+            # inputs shape: (4, 2, 9, 12, 64, 64)
+            # inputs shape: (3, 4, 22, 12, 64, 64)
+            # print(f"inputs shape: {inputs.shape}")
+            for i in range(inputs.shape[2]):
+                inputs[:, :, i] += self.rng.normal(
+                    loc=0,
+                    scale=self.train_noise_params["inputs"][self.input_variables[i]]["std"],
+                    size=inputs[:, :, i].shape,
+                )
+            # print(f"integrated_couplings shape: {integrated_couplings.shape}")
+            # (2, 4, 18, 12, 64, 64): [T, B, C*T, F, H, W]
+            # integrated_couplings shape: (3, 3, 1, 12, 64, 64)
+            for c in self.couplings:
+                for i in range(integrated_couplings.shape[2]):
+                    integrated_couplings[:, :, i] += self.rng.normal(
+                        loc=0,
+                        scale=self.train_noise_params["couplings"][c.variables[i%(len(c.variables))]]["std"],
+                        size=integrated_couplings[:, :, i].shape,
+                    )
+            # print(f"st_integrated_couplings shape: {st_integrated_couplings.shape}")
+            # st_integrated_couplings shape: (3, 3, 3, 12, 64, 64)
+            for c in self.st_couplings:
+                for i in range(st_integrated_couplings.shape[2]):
+                    st_integrated_couplings[:, :, i] += self.rng.normal(
+                        loc=0,
+                        scale=self.train_noise_params["st_couplings"][c.variables[i%(len(c.variables))]]["std"],
+                        size=st_integrated_couplings[:, :, i].shape,
+                    )
 
         # # Explicitly delete large temporary arrays so they can be garbage-collected
         # del input_array
