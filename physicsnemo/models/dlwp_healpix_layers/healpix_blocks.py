@@ -727,6 +727,7 @@ class Multi_ConvNeXtBlock_v2(th.nn.Module):
         activation: th.nn.Module = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
+        dropout: float = 0.0,
     ):
         """
         Parameters
@@ -783,6 +784,7 @@ class ConvNeXtBlock_v2(th.nn.Module):
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
         drop_path: float = 0.2,
+        dropout: float = 0.0,
     ):
         """
         Parameters
