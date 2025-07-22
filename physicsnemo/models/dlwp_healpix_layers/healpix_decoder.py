@@ -164,7 +164,7 @@ class UNetDecoder(th.nn.Module):
                 layer["recurrent"].reset()
 
 
-class UNetDecoder_Inception(th.nn.Module):
+class UNetDecoder_depthweise(th.nn.Module):
     """Generic UNetDecoder that can be applied to arbitrary meshes."""
 
     def __init__(

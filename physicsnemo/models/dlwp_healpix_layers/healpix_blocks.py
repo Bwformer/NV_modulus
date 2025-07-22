@@ -962,27 +962,28 @@ class GRN(th.nn.Module):
 
 
 
-class InceptionDWConv2d(th.nn.Module):
-    """ Inception depthweise convolution
-    """
-    def __init__(self, in_channels, square_kernel_size=3, band_kernel_size=7, branch_ratio=0.125):
-        super().__init__()
+# class InceptionDWConv2d(th.nn.Module):
+#     """ Inception depthweise convolution
+#     ! do not support padding like (0, band_kernel_size//2) yet.
+#     """
+#     def __init__(self, in_channels, square_kernel_size=3, band_kernel_size=7, branch_ratio=0.125):
+#         super().__init__()
         
-        gc = int(in_channels * branch_ratio) # channel numbers of a convolution branch
-        self.dwconv_hw = th.nn.Conv2d(in_channels=int(gc), out_channels=int(gc), 
-                                        kernel_size=square_kernel_size, padding=square_kernel_size//2, groups=gc)
-        self.dwconv_w = th.nn.Conv2d(in_channels=gc, out_channels=gc, 
-                                        kernel_size=(1, band_kernel_size), padding=(0, band_kernel_size//2), groups=gc)
-        self.dwconv_h = th.nn.Conv2d(in_channels=gc, out_channels=gc, 
-                                        kernel_size=(band_kernel_size, 1), padding=(band_kernel_size//2, 0), groups=gc)
-        self.split_indexes = (in_channels - 3 * gc, gc, gc, gc)
+#         gc = int(in_channels * branch_ratio) # channel numbers of a convolution branch
+#         self.dwconv_hw = th.nn.Conv2d(in_channels=int(gc), out_channels=int(gc), 
+#                                         kernel_size=square_kernel_size, padding=square_kernel_size//2, groups=gc)
+#         self.dwconv_w = th.nn.Conv2d(in_channels=gc, out_channels=gc, 
+#                                         kernel_size=(1, band_kernel_size), padding=(0, band_kernel_size//2), groups=gc)
+#         self.dwconv_h = th.nn.Conv2d(in_channels=gc, out_channels=gc, 
+#                                         kernel_size=(band_kernel_size, 1), padding=(band_kernel_size//2, 0), groups=gc)
+#         self.split_indexes = (in_channels - 3 * gc, gc, gc, gc)
         
-    def forward(self, x):
-        x_id, x_hw, x_w, x_h = torch.split(x, self.split_indexes, dim=1)
-        return torch.cat(
-            (x_id, self.dwconv_hw(x_hw), self.dwconv_w(x_w), self.dwconv_h(x_h)), 
-            dim=1,
-        )
+#     def forward(self, x):
+#         x_id, x_hw, x_w, x_h = torch.split(x, self.split_indexes, dim=1)
+#         return torch.cat(
+#             (x_id, self.dwconv_hw(x_hw), self.dwconv_w(x_w), self.dwconv_h(x_h)), 
+#             dim=1,
+#         )
 
 
 class input_Block(th.nn.Module):
@@ -1010,8 +1011,8 @@ class input_Block(th.nn.Module):
     def forward(self, x):
         return self.input_block(x)
 
-class InceptionNeXt(th.nn.Module):
-    """Another modification of InceptionNeXt block. adding LayerNorm, GRN and DropPath
+class ConvNeXtBlock_v2_depthweise(th.nn.Module):
+    """A modification of ConvNeXtBlock_v2 block.
     """
 
     def __init__(
@@ -1020,7 +1021,7 @@ class InceptionNeXt(th.nn.Module):
         in_channels: int = 3,
         latent_channels: int = 1,
         out_channels: int = 1,
-        kernel_size: int = 3,
+        kernel_size: int = 7,
         dilation: int = 1,
         n_layers: int = 1,  # not used, but required for hydra instantiation
         upscale_factor: int = 4,
@@ -1039,11 +1040,15 @@ class InceptionNeXt(th.nn.Module):
         # InceptionDW convolution
         # !! channel change move to downscaling block !!
         convblock.append(
-            InceptionDWConv2d(
-                in_channels=latent_channels,
-                square_kernel_size=3, 
-                band_kernel_size=7, 
-                branch_ratio=0.125,
+            geometry_layer(
+                layer=torch.nn.Conv2d,
+                in_channels=int(latent_channels),
+                out_channels=int(latent_channels),
+                kernel_size=kernel_size,
+                dilation=dilation,
+                groups=int(latent_channels),
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
             )
         )
         # Apply LayerNorm
@@ -1101,9 +1106,9 @@ class InceptionNeXt(th.nn.Module):
 
 
 
-class Multi_InceptionNeXt(th.nn.Module):
+class Multi_ConvNeXtBlock_v2_depthweise(th.nn.Module):
     """
-    Class for creating multi-block InceptionNeXt. Defaults to all InceptionNeXts having same parameters
+    Class for creating multi-block ConvNeXtBlock_v2_depthweise. Defaults to all ConvNeXtBlock_v2_depthweise having same parameters
     """
 
     def __init__(
@@ -1112,7 +1117,7 @@ class Multi_InceptionNeXt(th.nn.Module):
         in_channels: int = 3,
         latent_channels: int = 1,
         out_channels: int = 1,
-        kernel_size: int = 3,
+        kernel_size: int = 7,
         dilation: int = 1,
         upscale_factor: int = 4,
         n_layers: int = 1,
@@ -1136,7 +1141,7 @@ class Multi_InceptionNeXt(th.nn.Module):
 
             # Create a single block as a separate Module
             self.blocks.append(
-                InceptionNeXt(
+                ConvNeXtBlock_v2_depthweise(
                     geometry_layer=geometry_layer,
                     in_channels=curr_in,
                     latent_channels=latent_channels,

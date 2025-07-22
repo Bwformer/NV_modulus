@@ -134,7 +134,7 @@ class UNetEncoder(th.nn.Module):
 
 
 
-class UNetEncoder_Inception(th.nn.Module):
+class UNetEncoder_depthweise(th.nn.Module):
     """Generic UNetEncoder that can be applied to arbitrary meshes.
     add input block to the encoder, move the channel change to the downsampling block
     """
