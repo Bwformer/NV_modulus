@@ -28,9 +28,13 @@ from .healpix_blocks import (
     ConvNeXtBlock_v2,
     TransposedConvUpsample,
     downsample_conv_block,
+    InceptionDWConv2d,
+    input_Block,
+    InceptionNeXt,
+    Multi_InceptionNeXt,
 )
 from .healpix_decoder import UNetDecoder
-from .healpix_encoder import UNetEncoder
+from .healpix_encoder import UNetEncoder, UNetEncoder_Inception
 from .healpix_layers import (
     HEALPixFoldFaces,
     HEALPixLayer,
