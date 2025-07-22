@@ -994,17 +994,23 @@ class input_Block(th.nn.Module):
         self,
         in_channels: int = 1,
         out_channels: int = 1,
-        kernel_size: int = 2, # 4
-        stride: int = 2, # 4
+        kernel_size: int = 3, # 4
+        stride: int = 1, # 4
+        enable_nhwc: bool = False,
+        enable_healpixpad: bool = False,
+        geometry_layer: th.nn.Module = HEALPixLayer,
     ):
         super().__init__()
         self.input_block = th.nn.Sequential(
-                torch.nn.Conv2d(
-                        in_channels=in_channels,
-                        out_channels=out_channels,
-                        kernel_size=kernel_size,
-                        stride=stride,
-                        ),
+                geometry_layer(
+                    layer=th.nn.Conv2d,
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    enable_healpixpad=enable_healpixpad,
+                    enable_nhwc=enable_nhwc,
+                    ),
                 LayerNorm(int(out_channels), eps=1e-6)          
             )
 

@@ -175,7 +175,7 @@ class UNetDecoder_depthweise(th.nn.Module):
         recurrent_block: DictConfig = None,
         n_channels: Sequence = (64, 32, 16),
         n_layers: Sequence = (1, 2, 2),
-        conv_kernel_size: Sequence = (3, 3, 3),
+        conv_kernel_size: Sequence = (7, 7, 7),
         output_channels: int = 1,
         dilations: list = None,
         enable_nhwc: bool = False,
@@ -249,16 +249,16 @@ class UNetDecoder_depthweise(th.nn.Module):
 
         # (Linear) Output layer
         self.output_layer = th.nn.Sequential(
-            instantiate(
-                    config=up_sampling_block,
-                    in_channels=old_channel,
-                    out_channels=curr_channel,
-                    enable_nhwc=enable_nhwc,
-                    enable_healpixpad=enable_healpixpad,
-                ), #Add the last upsampling layer
+            # instantiate(
+            #         config=up_sampling_block,
+            #         in_channels=old_channel,
+            #         out_channels=curr_channel,
+            #         enable_nhwc=enable_nhwc,
+            #         enable_healpixpad=enable_healpixpad,
+            #     ), #Add the last upsampling layer
             instantiate(
                 config=output_layer,
-                in_channels=curr_channel,
+                in_channels=old_channel,
                 out_channels=output_channels,
                 dilation=dilations[-1],
                 enable_nhwc=enable_nhwc,

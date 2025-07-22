@@ -148,7 +148,7 @@ class UNetEncoder_depthweise(th.nn.Module):
         input_channels: int = 3,
         n_channels: Sequence = (16, 32, 64),
         n_layers: Sequence = (2, 2, 1),
-        conv_kernel_size: Sequence = (3, 3, 3),
+        conv_kernel_size: Sequence = (7, 7, 7),
         dilations: list = None,
         enable_nhwc: bool = False,
         enable_healpixpad: bool = False,
@@ -187,14 +187,16 @@ class UNetEncoder_depthweise(th.nn.Module):
 
         # Build encoder
         self.encoder = []
-        # Add input block if specified
+        # ## Input block ##
         self.encoder.append(th.nn.Sequential(
             instantiate(
                 config=input_block,
                 in_channels=input_channels,
                 out_channels=n_channels[0],
-                kernel_size=2,
-                stride=2,
+                kernel_size=3,
+                stride=1,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
                 )
             )
         )
