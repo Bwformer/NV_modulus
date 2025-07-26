@@ -813,7 +813,7 @@ class ConvNeXtBlock_v2(th.nn.Module):
         """
         super().__init__()
 
-        if in_channels == int(latent_channels):
+        if in_channels == int(out_channels):
             self.skip_module = lambda x: x  # Identity-function required in forward pass
         else:
             self.skip_module = geometry_layer(
@@ -1038,7 +1038,7 @@ class ConvNeXtBlock_v2_depthweise(th.nn.Module):
     ):
         super().__init__()
 
-        if in_channels == int(latent_channels):
+        if in_channels == int(out_channels):
             self.skip_module = lambda x: x  # Identity-function required in forward pass
 
         # 1st ConvNeXt block, the output of this one remains internal
