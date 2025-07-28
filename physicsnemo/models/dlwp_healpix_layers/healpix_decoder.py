@@ -205,9 +205,15 @@ class UNetDecoder_depthweise(th.nn.Module):
 
             conv_module = instantiate(
                 config=conv_block,
-                in_channels=curr_channel,  # Considering skip connection
-                latent_channels=curr_channel,
-                out_channels=curr_channel,
+                in_channels=curr_channel * 2
+                    if n > 0
+                    else curr_channel,  # Considering skip connection
+                latent_channels=curr_channel * 2
+                    if n > 0
+                    else curr_channel,
+                out_channels=curr_channel * 2
+                    if n > 0
+                    else curr_channel,
                 dilation=dilations[n],
                 n_layers=n_layers[n],
                 kernel_size=conv_kernel_size[n],
@@ -219,13 +225,15 @@ class UNetDecoder_depthweise(th.nn.Module):
             if recurrent_block is not None:
                 rec_module = instantiate(
                     config=recurrent_block,
-                    in_channels=curr_channel,
+                    in_channels=curr_channel * 2
+                        if n > 0
+                        else curr_channel,
                     enable_healpixpad=enable_healpixpad,
                 )
             else:
                 rec_module = None
             
-            old_channel = curr_channel
+            old_channel = curr_channel * 2 if n > 0 else curr_channel
 
             self.decoder.append(
                 th.nn.ModuleDict(
@@ -258,22 +266,6 @@ class UNetDecoder_depthweise(th.nn.Module):
             )
         )
 
-        # concat -> 1*1 conv
-        self.concat_conv = th.nn.ModuleList()
-        for n, curr_channel in enumerate(n_channels):
-            if n > 0:  # 只有 n > 0 的层才有 upsample
-                self.concat_conv.append(
-                    instantiate(
-                        config=output_layer,
-                        in_channels=curr_channel * 2,
-                        out_channels=curr_channel,
-                        kernel_size=1,
-                        dilation=1,
-                        enable_nhwc=enable_nhwc,
-                        enable_healpixpad=enable_healpixpad,
-                    )
-                )
-
     def forward(self, inputs: Sequence) -> th.Tensor:
         """
         Forward pass of the HEALPix Unet decoder
@@ -292,7 +284,6 @@ class UNetDecoder_depthweise(th.nn.Module):
             if layer["upsamp"] is not None:
                 up = layer["upsamp"](x)
                 x = th.cat([up, inputs[-1 - n]], dim=self.channel_dim)
-                x = self.concat_conv[n-1](x) 
             x = layer["conv"](x)
             if layer["recurrent"] is not None:
                 x = layer["recurrent"](x)
