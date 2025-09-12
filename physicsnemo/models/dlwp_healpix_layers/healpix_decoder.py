@@ -164,6 +164,61 @@ class UNetDecoder(th.nn.Module):
                 layer["recurrent"].reset()
 
 
+class UNetDecoder_WithUpsampling(UNetDecoder):
+    """UNetDecoder with additional upsampling layer before output."""
+
+    def __init__(
+        self,
+        conv_block: DictConfig,
+        up_sampling_block: DictConfig,
+        output_layer: DictConfig,
+        recurrent_block: DictConfig = None,
+        n_channels: Sequence = (64, 32, 16),
+        n_layers: Sequence = (1, 2, 2),
+        conv_kernel_size: Sequence = (3, 3, 3),
+        output_channels: int = 1,
+        dilations: list = None,
+        enable_nhwc: bool = False,
+        enable_healpixpad: bool = False,
+    ):
+        # 调用父类初始化
+        super().__init__(
+            conv_block=conv_block,
+            up_sampling_block=up_sampling_block,
+            output_layer=output_layer,
+            recurrent_block=recurrent_block,
+            n_channels=n_channels,
+            n_layers=n_layers,
+            conv_kernel_size=conv_kernel_size,
+            output_channels=output_channels,
+            dilations=dilations,
+            enable_nhwc=enable_nhwc,
+            enable_healpixpad=enable_healpixpad,
+        )
+        
+        # 重写输出层，添加上采样
+        old_channel = n_channels[-1]  # 上一层的通道数
+        curr_channel = n_channels[-1]  # 当前层通道数，这里假设保持不变
+        
+        self.output_layer = th.nn.Sequential(
+            instantiate(
+                config=up_sampling_block,
+                in_channels=old_channel,
+                out_channels=curr_channel,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            ),  # Add the last upsampling layer
+            instantiate(
+                config=output_layer,
+                in_channels=curr_channel,
+                out_channels=output_channels,
+                dilation=dilations[-1] if dilations else 1,
+                enable_nhwc=enable_nhwc,
+                enable_healpixpad=enable_healpixpad,
+            )
+        )
+
+
 class UNetDecoder_depthweise(th.nn.Module):
     """Generic UNetDecoder that can be applied to arbitrary meshes."""
 

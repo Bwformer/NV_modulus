@@ -36,7 +36,7 @@ from .healpix_blocks import (
     InceptionNeXt,
     Multi_InceptionNeXt,
 )
-from .healpix_decoder import (UNetDecoder, UNetDecoder_depthweise, UNetDecoder_Inception)
+from .healpix_decoder import (UNetDecoder, UNetDecoder_depthweise, UNetDecoder_Inception, UNetDecoder_WithUpsampling)
 from .healpix_encoder import (UNetEncoder, UNetEncoder_depthweise, UNetEncoder_Inception)
 from .healpix_layers import (
     HEALPixFoldFaces,
