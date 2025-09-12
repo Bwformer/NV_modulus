@@ -29,6 +29,7 @@ class UNetEncoder(th.nn.Module):
         conv_block: DictConfig,
         down_sampling_block: DictConfig,
         recurrent_block: DictConfig = None,
+        input_block: DictConfig = None,
         input_channels: int = 3,
         n_channels: Sequence = (16, 32, 64),
         n_layers: Sequence = (2, 2, 1),
@@ -73,6 +74,21 @@ class UNetEncoder(th.nn.Module):
         # Build encoder
         old_channels = input_channels
         self.encoder = []
+
+        # Add input block if specified
+        if input_block is not None:
+            self.encoder.append(th.nn.Sequential(
+                instantiate(
+                    config=input_block,
+                    in_channels=input_channels,
+                    out_channels=n_channels[0],
+                    kernel_size=2,
+                    stride=2,
+                    )
+                )
+            )
+            old_channels = n_channels[0]
+
         for n, curr_channel in enumerate(n_channels):
             modules = list()
             if n > 0:
